@@ -1,0 +1,12 @@
+def main():
+    calificaciones = [0] * 5
+
+    for i in range(5):
+        calificacion = int(input(f"Captura la calificación {i+1}: "))
+        calificaciones[i] = calificacion
+    
+    for i in range(5):
+        print(f"La calificación {i+1} es: {calificaciones[i]}")
+
+if __name__ == "__main__":
+    main()
