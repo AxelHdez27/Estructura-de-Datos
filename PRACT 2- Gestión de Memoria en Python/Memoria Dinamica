@@ -1,0 +1,19 @@
+def main():
+    Fruta = []
+
+    Fruta.append("Manzana")
+    Fruta.append("Pera")
+    Fruta.append("Uvas")
+    Fruta.append("Bananas")
+    
+    print(Fruta)
+
+    Fruta.pop(1)  # Elimina "Pera"
+    Fruta.pop(0)  # Elimina "Manzana"
+    
+    Fruta.append("sandia")
+    
+    print(Fruta)
+
+if __name__ == "__main__":
+    main()
