@@ -1,0 +1,213 @@
+import random
+
+nombres = [
+    "Juan", "María", "Pedro", "Ana", "Luis", "Carmen", "José", "Laura",
+    "Carlos", "Sofía", "Miguel", "Elena", "Diego", "Patricia", "Roberto",
+    "Isabel", "Fernando", "Mónica", "Javier", "Beatriz", "Alejandro",
+    "Lucía", "Ricardo", "Gabriela", "Antonio", "Daniela", "Manuel",
+    "Valeria", "Raúl", "Andrea"
+]
+
+apellidos = [
+    "García", "Martínez", "López", "Rodríguez", "Hernández", "González",
+    "Pérez", "Sánchez", "Ramírez", "Torres", "Flores", "Rivera",
+    "Gómez", "Díaz", "Cruz", "Morales", "Reyes", "Jiménez", "Ruiz",
+    "Castillo", "Mendoza", "Ortiz", "Vargas", "Romero", "Silva"
+]
+
+materias = ["Matemáticas", "Física", "Química", "Historia", "Literatura", "Inglés"]
+
+def generar_nombre_completo():
+
+    nombre = random.choice(nombres)
+    apellido1 = random.choice(apellidos)
+    apellido2 = random.choice(apellidos)
+    return f"{nombre} {apellido1} {apellido2}"
+
+def generar_alumnos(cantidad):
+    alumnos = []
+    for i in range(cantidad):
+        alumno = {
+            "numero": i + 1,
+            "nombre": generar_nombre_completo(),
+            "calificaciones": {materia: random.randint(0, 10) for materia in materias}
+        }
+        alumnos.append(alumno)
+    return alumnos
+
+def calcular_promedio(alumno):
+    return sum(alumno["calificaciones"].values()) / len(materias)
+
+def mostrar_tabla_completa(alumnos):
+    print("\n" + "="*125)
+    print(f"{'N°':<5} {'NOMBRE':<30} {'Matemáticas':>12} {'Física':>12} {'Química':>12} {'Historia':>12} {'Literatura':>12} {'Inglés':>12} {'PROMEDIO':>12}")
+    print("="*125)
+    
+    for alumno in alumnos:
+        numero = alumno["numero"]
+        nombre = alumno["nombre"]
+        califs = alumno["calificaciones"]
+        promedio = calcular_promedio(alumno)
+        
+        print(f"{numero:<5} {nombre:<30} {califs['Matemáticas']:>12} {califs['Física']:>12} "
+              f"{califs['Química']:>12} {califs['Historia']:>12} "
+              f"{califs['Literatura']:>12} {califs['Inglés']:>12} {promedio:>12.2f}")
+    
+    print("="*125 + "\n")
+
+def buscar_alumno(alumnos):
+    busqueda = input("\nIngresa el nombre del alumno a buscar: ").strip()
+    
+    encontrados = []
+    for alumno in alumnos:
+        if busqueda.lower() in alumno["nombre"].lower():
+            encontrados.append(alumno)
+    
+    if not encontrados:
+        print(f"\n No se encontró ningún alumno con '{busqueda}'\n")
+    else:
+        print(f"\n Se encontraron {len(encontrados)} alumno(s):\n")
+        for alumno in encontrados:
+            print(f"  N°: {alumno['numero']}")
+            print(f"  Nombre: {alumno['nombre']}")
+            print(f"  Calificaciones:")
+            for materia, calif in alumno["calificaciones"].items():
+                print(f"    - {materia}: {calif}")
+            print(f"  Promedio: {calcular_promedio(alumno):.2f}\n")
+
+def ver_materia(alumnos):
+   
+    print("\nMaterias disponibles:")
+    for i, materia in enumerate(materias, 1):
+        print(f"  {i}. {materia}")
+    
+    try:
+        opcion = int(input("\nSelecciona el número de la materia: "))
+        if 1 <= opcion <= len(materias):
+            materia_seleccionada = materias[opcion - 1]
+            
+            print(f"\n{'='*65}")
+            print(f"CALIFICACIONES EN {materia_seleccionada.upper()}")
+            print(f"{'='*65}")
+            print(f"{'N°':<5} {'NOMBRE':<35} {'CALIFICACIÓN':>20}")
+            print(f"{'-'*65}")
+            
+            for alumno in alumnos:
+                numero = alumno["numero"]
+                nombre = alumno["nombre"]
+                calif = alumno["calificaciones"][materia_seleccionada]
+                print(f"{numero:<5} {nombre:<35} {calif:>20}")
+         
+            calificaciones = [a["calificaciones"][materia_seleccionada] for a in alumnos]
+            promedio_materia = sum(calificaciones) / len(calificaciones)
+            
+            print(f"{'='*65}")
+            print(f"Promedio de la materia: {promedio_materia:.2f}")
+            print(f"Calificación máxima: {max(calificaciones)}")
+            print(f"Calificación mínima: {min(calificaciones)}")
+            print(f"{'='*65}\n")
+        else:
+            print("\n Opción inválida\n")
+    except ValueError:
+        print("\n Por favor ingresa un número válido\n")
+
+def modificar_calificacion(alumnos):
+
+    try:
+        numero_alumno = int(input("\nIngresa el número del alumno: "))
+        
+        
+        alumno_encontrado = None
+        for alumno in alumnos:
+            if alumno["numero"] == numero_alumno:
+                alumno_encontrado = alumno
+                break
+        
+        if not alumno_encontrado:
+            print(f"\n No se encontró el alumno con número {numero_alumno}\n")
+            return
+        
+      
+        print(f"\n{'='*50}")
+        print(f"Alumno N°{alumno_encontrado['numero']}: {alumno_encontrado['nombre']}")
+        print(f"{'='*50}")
+        print("Calificaciones actuales:")
+        for i, (materia, calif) in enumerate(alumno_encontrado["calificaciones"].items(), 1):
+            print(f"  {i}. {materia}: {calif}")
+        print(f"{'='*50}")
+        
+      
+        materia_num = int(input("\nSelecciona el número de la materia a modificar: "))
+        
+        if 1 <= materia_num <= len(materias):
+            materia_seleccionada = materias[materia_num - 1]
+            calif_actual = alumno_encontrado["calificaciones"][materia_seleccionada]
+            
+            print(f"\nCalificación actual en {materia_seleccionada}: {calif_actual}")
+            nueva_calif = int(input("Ingresa la nueva calificación (0-10): "))
+            
+            if 0 <= nueva_calif <= 10:
+                alumno_encontrado["calificaciones"][materia_seleccionada] = nueva_calif
+                print(f"\n Calificación actualizada exitosamente!")
+                print(f"  {materia_seleccionada}: {calif_actual} → {nueva_calif}")
+                print(f"  Nuevo promedio: {calcular_promedio(alumno_encontrado):.2f}\n")
+            else:
+                print("\n La calificación debe estar entre 0 y 10\n")
+        else:
+            print("\n Opción de materia inválida\n")
+            
+    except ValueError:
+        print("\n Por favor ingresa números válidos\n")
+
+def menu_principal(alumnos):
+    
+    while True:
+        print("\n" + "="*50)
+        print("   SISTEMA DE GESTIÓN DE CALIFICACIONES")
+        print("="*50)
+        print("1. Ver tabla completa de alumnos")
+        print("2. Buscar un alumno específico")
+        print("3. Ver calificaciones por materia")
+        print("4. Modificar una calificación")
+        print("5. Salir")
+        print("="*50)
+        
+        opcion = input("\nSelecciona una opción: ").strip()
+        
+        if opcion == "1":
+            mostrar_tabla_completa(alumnos)
+        elif opcion == "2":
+            buscar_alumno(alumnos)
+        elif opcion == "3":
+            ver_materia(alumnos)
+        elif opcion == "4":
+            modificar_calificacion(alumnos)
+        elif opcion == "5":
+            print("\n¡Hasta luego! \n")
+            break
+        else:
+            print("\n Opción inválida. Por favor selecciona 1, 2, 3, 4 o 5.\n")
+def main():
+   
+    print("\n" + "="*50)
+    print("   BIENVENIDO AL SISTEMA DE CALIFICACIONES")
+    print("="*50)
+    
+    while True:
+        try:
+            cantidad = int(input("\n¿Cuántos alumnos deseas generar? "))
+            if cantidad > 0:
+                break
+            else:
+                print(" Por favor ingresa un número mayor a 0")
+        except ValueError:
+            print(" Por favor ingresa un número válido")
+    
+    print(f"\n Generando {cantidad} alumnos con calificaciones aleatorias (0-10)...")
+    alumnos = generar_alumnos(cantidad)
+    print(" ¡Listo!\n")
+    
+    menu_principal(alumnos)
+
+if __name__ == "__main__":
+    main()
