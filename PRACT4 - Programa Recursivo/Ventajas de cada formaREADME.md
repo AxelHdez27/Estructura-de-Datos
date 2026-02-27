@@ -1,0 +1,4 @@
+El recursivo es más lento porque cada vez que necesita un valor que ya calculó antes, lo recalcula desde cero. No guarda ningún resultado previo en memoria, así que repite el mismo trabajo una y otra vez, acumulando millones de operaciones innecesarias conforme n crece.
+El iterativo simplemente avanza paso a paso, usa lo que ya tiene y nunca necesita repetir nada. Cada valor se calcula exactamente una vez y se descarta cuando ya no sirve.
+Hay una ventaja de eficiencia hacia el iterativo ya que hace el mínimo trabajo necesario, mientras el recursivo hace el máximo trabajo posible. Esto se refleja directamente en los tiempos:
+Para n=30 el recursivo tarda 0.107249s mientras el iterativo lo resuelve en 0.000004s. La diferencia no es gradual, es exponencial con cada número que sube n, el recursivo no se hace un poco más lento, se hace dramáticamente más lento, mientras el iterativo prácticamente no se mueve.
