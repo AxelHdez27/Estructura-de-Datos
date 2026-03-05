@@ -1,0 +1,711 @@
+"""
+╔══════════════════════════════════════════════════════════╗
+║       VISUALIZADOR DE PILA LIFO — Python tkinter         ║
+║       Ejecutar: python pila_lifo.py                      ║
+╚══════════════════════════════════════════════════════════╝
+  Funciones:
+    - PUSH / POP / PEEK / CLEAR
+    - Buscar elemento (resalta posición)
+    - Deshacer última operación (UNDO)
+    - Guardar pila en archivo .txt
+    - Cargar pila desde archivo .txt
+    - Animaciones de entrada y salida
+"""
+
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import time
+import json
+import copy
+
+# ── Paleta de colores ──────────────────────────────────────
+BG        = "#050f0a"
+PANEL     = "#0a1a0f"
+GREEN     = "#00ff88"
+GREEN_DIM = "#00aa55"
+AMBER     = "#ffaa00"
+RED       = "#ff4444"
+BLUE      = "#88ccff"
+PURPLE    = "#cc88ff"
+TEXT      = "#c0ffd8"
+DARK_BG   = "#000d06"
+BORDER    = "#004422"
+
+MAX_SIZE = 10
+ITEM_H   = 44
+ITEM_W   = 220
+CANVAS_W = 340
+CANVAS_H = 500
+
+ANIM_STEPS = 10
+ANIM_DELAY = 18   # ms por frame
+
+
+# ── Clase Pila ─────────────────────────────────────────────
+class Pila:
+    def __init__(self):
+        self._datos = []
+
+    def push(self, valor):
+        if len(self._datos) >= MAX_SIZE:
+            raise OverflowError("Pila llena (max. 10 elementos)")
+        self._datos.append(str(valor))
+
+    def pop(self):
+        if not self._datos:
+            raise IndexError("Pila vacia")
+        return self._datos.pop()
+
+    def peek(self):
+        if not self._datos:
+            raise IndexError("Pila vacia")
+        return self._datos[-1]
+
+    def buscar(self, valor):
+        """Devuelve lista de índices donde aparece el valor."""
+        v = str(valor)
+        return [i for i, x in enumerate(self._datos) if x == v]
+
+    def clear(self):
+        self._datos.clear()
+
+    def to_list(self):
+        return list(self._datos)
+
+    def from_list(self, lst):
+        self._datos = [str(x) for x in lst[:MAX_SIZE]]
+
+    def __len__(self):
+        return len(self._datos)
+
+    def __iter__(self):
+        return iter(self._datos)
+
+    @property
+    def vacia(self):
+        return len(self._datos) == 0
+
+
+# ── App principal ──────────────────────────────────────────
+class AppPila:
+    def __init__(self, root):
+        self.root = root
+        self.pila = Pila()
+        self.total_ops  = 0
+        self.highlight  = []   # índices resaltados (buscar/peek)
+        self.hl_color   = GREEN
+        self._blink_job = None
+        self._anim_job  = None
+
+        # Historial para UNDO: lista de snapshots [(accion, datos)]
+        self._historial = []
+
+        self._build_ui()
+        self._log("Sistema inicializado.", tag="dim")
+        self._render()
+
+    # ═══════════════════════════════════════════════════════
+    #  CONSTRUCCIÓN DE LA UI
+    # ═══════════════════════════════════════════════════════
+    def _build_ui(self):
+        self.root.title("Pila LIFO — Visualizador")
+        self.root.configure(bg=BG)
+        self.root.resizable(False, False)
+
+        # Título
+        hdr = tk.Frame(self.root, bg=BG)
+        hdr.pack(pady=(16, 4))
+        tk.Label(hdr, text="PILA LIFO",
+                 font=("Courier New", 22, "bold"), fg=GREEN, bg=BG).pack()
+        tk.Label(hdr, text="LAST IN  -  FIRST OUT  -  STACK SIMULATOR",
+                 font=("Courier New", 8), fg=GREEN_DIM, bg=BG).pack(pady=(2, 0))
+
+        # Separador
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x", padx=20, pady=6)
+
+        # Cuerpo
+        body = tk.Frame(self.root, bg=BG)
+        body.pack(padx=20, pady=6)
+
+        self._build_canvas(body)   # col 0
+        self._build_right(body)    # col 1
+
+    # ── Canvas ────────────────────────────────────────────
+    def _build_canvas(self, parent):
+        left = tk.Frame(parent, bg=BG)
+        left.grid(row=0, column=0, padx=(0, 18), sticky="n")
+
+        tk.Label(left, text="VISUALIZACION DE LA PILA",
+                 font=("Courier New", 8), fg=GREEN_DIM, bg=BG).pack(anchor="w", pady=(0, 5))
+
+        self.canvas = tk.Canvas(left, width=CANVAS_W, height=CANVAS_H,
+                                bg=PANEL, highlightthickness=1,
+                                highlightbackground=BORDER)
+        self.canvas.pack()
+
+    # ── Panel derecho ─────────────────────────────────────
+    def _build_right(self, parent):
+        right = tk.Frame(parent, bg=BG)
+        right.grid(row=0, column=1, sticky="n")
+
+        self._build_ops(right)
+        self._build_extra(right)
+        self._build_stats(right)
+        self._build_log_panel(right)
+
+    # ── Operaciones base ──────────────────────────────────
+    def _build_ops(self, parent):
+        f = self._panel(parent, "OPERACIONES BASICAS")
+
+        # Entry + PUSH
+        row = tk.Frame(f, bg=PANEL)
+        row.pack(fill="x", pady=(0, 7))
+        self.entry = tk.Entry(row, font=("Courier New", 10),
+                              bg=DARK_BG, fg=GREEN,
+                              insertbackground=GREEN, relief="flat",
+                              highlightthickness=1,
+                              highlightbackground=GREEN_DIM,
+                              highlightcolor=GREEN)
+        self.entry.pack(side="left", ipady=6, padx=(0, 6), fill="x", expand=True)
+        self.entry.bind("<Return>", lambda e: self._push())
+        self._btn(row, "PUSH", self._push, GREEN).pack(side="left")
+
+        # POP + PEEK
+        row2 = tk.Frame(f, bg=PANEL)
+        row2.pack(fill="x", pady=(0, 6))
+        self._btn(row2, "POP",  self._pop,  AMBER).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self._btn(row2, "PEEK", self._peek, BLUE).pack(side="left",  fill="x", expand=True)
+
+        # CLEAR + UNDO
+        row3 = tk.Frame(f, bg=PANEL)
+        row3.pack(fill="x", pady=(0, 6))
+        self._btn(row3, "LIMPIAR", self._clear, RED).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.btn_undo = self._btn(row3, "DESHACER", self._undo, PURPLE)
+        self.btn_undo.pack(side="left", fill="x", expand=True)
+
+        # Status
+        sf = tk.Frame(f, bg=DARK_BG, highlightthickness=1, highlightbackground=BORDER)
+        sf.pack(fill="x", pady=(2, 0))
+        si = tk.Frame(sf, bg=DARK_BG)
+        si.pack(padx=10, pady=7, fill="x")
+        self.dot = tk.Canvas(si, width=10, height=10, bg=DARK_BG, highlightthickness=0)
+        self.dot.pack(side="left", padx=(0, 7))
+        self._dot_oval = self.dot.create_oval(1, 1, 9, 9, fill=GREEN_DIM, outline="")
+        self.status_var = tk.StringVar(value="Sistema listo.")
+        tk.Label(si, textvariable=self.status_var, font=("Courier New", 9),
+                 fg=TEXT, bg=DARK_BG, wraplength=210, justify="left").pack(side="left")
+
+    # ── Opciones extra ────────────────────────────────────
+    def _build_extra(self, parent):
+        f = self._panel(parent, "OPCIONES AVANZADAS")
+
+        # Buscar
+        row = tk.Frame(f, bg=PANEL)
+        row.pack(fill="x", pady=(0, 7))
+        tk.Label(row, text="Buscar:", font=("Courier New", 8),
+                 fg=GREEN_DIM, bg=PANEL, width=7, anchor="w").pack(side="left")
+        self.search_entry = tk.Entry(row, font=("Courier New", 10),
+                                     bg=DARK_BG, fg=GREEN,
+                                     insertbackground=GREEN, relief="flat",
+                                     highlightthickness=1,
+                                     highlightbackground=GREEN_DIM,
+                                     highlightcolor=GREEN, width=12)
+        self.search_entry.pack(side="left", ipady=5, padx=(0, 6), fill="x", expand=True)
+        self.search_entry.bind("<Return>", lambda e: self._buscar())
+        self._btn(row, "BUSCAR", self._buscar, AMBER, width=7).pack(side="left")
+
+        # Guardar / Cargar
+        row2 = tk.Frame(f, bg=PANEL)
+        row2.pack(fill="x")
+        self._btn(row2, "GUARDAR PILA", self._guardar, GREEN_DIM).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self._btn(row2, "CARGAR PILA",  self._cargar,  GREEN_DIM).pack(side="left", fill="x", expand=True)
+
+    # ── Stats ─────────────────────────────────────────────
+    def _build_stats(self, parent):
+        f = self._panel(parent, "ESTADO")
+
+        g = tk.Frame(f, bg=PANEL)
+        g.pack(fill="x")
+        g.columnconfigure(0, weight=1)
+        g.columnconfigure(1, weight=1)
+        g.columnconfigure(2, weight=1)
+
+        boxes = [
+            ("ELEMENTOS", "0",    "lbl_size"),
+            ("OPERACIONES", "0",  "lbl_ops"),
+            ("HISTORIAL", "0",    "lbl_hist"),
+        ]
+        for col, (lbl, val, attr) in enumerate(boxes):
+            b = tk.Frame(g, bg=DARK_BG, highlightthickness=1, highlightbackground=BORDER)
+            b.grid(row=0, column=col, padx=(0 if col == 0 else 4, 0), sticky="ew")
+            tk.Label(b, text=lbl, font=("Courier New", 7), fg=GREEN_DIM, bg=DARK_BG).pack(pady=(5, 0))
+            lbl_w = tk.Label(b, text=val, font=("Courier New", 16, "bold"), fg=GREEN, bg=DARK_BG)
+            lbl_w.pack(pady=(0, 5))
+            setattr(self, attr, lbl_w)
+
+        for label, val in [("Complejidad", "O(1)"), ("Tipo", "LIFO")]:
+            row = tk.Frame(f, bg=DARK_BG, highlightthickness=1, highlightbackground=BORDER)
+            row.pack(fill="x", pady=(5, 0))
+            tk.Label(row, text=label, font=("Courier New", 8), fg=GREEN_DIM, bg=DARK_BG).pack(side="left", padx=10, pady=4)
+            tk.Label(row, text=val, font=("Courier New", 8, "bold"), fg=GREEN, bg=DARK_BG).pack(side="right", padx=10)
+
+    # ── Log ───────────────────────────────────────────────
+    def _build_log_panel(self, parent):
+        f = self._panel(parent, "REGISTRO DE OPERACIONES")
+
+        lf = tk.Frame(f, bg=DARK_BG, highlightthickness=1, highlightbackground=BORDER)
+        lf.pack(fill="x")
+
+        self.log_text = tk.Text(lf, height=6, width=36,
+                                font=("Courier New", 8),
+                                bg=DARK_BG, fg=GREEN_DIM,
+                                relief="flat", bd=0, state="disabled",
+                                cursor="arrow")
+        self.log_text.pack(side="left", fill="both", expand=True, padx=4, pady=4)
+
+        sb = tk.Scrollbar(lf, command=self.log_text.yview,
+                          bg=DARK_BG, troughcolor=DARK_BG, activebackground=GREEN_DIM)
+        sb.pack(side="right", fill="y")
+        self.log_text.configure(yscrollcommand=sb.set)
+
+        for tag, color in [("push", GREEN), ("pop", AMBER), ("err", RED),
+                            ("info", BLUE), ("undo", PURPLE), ("search", AMBER),
+                            ("save", GREEN_DIM), ("ts", BORDER), ("dim", GREEN_DIM)]:
+            self.log_text.tag_config(tag, foreground=color)
+
+    # ── Helpers UI ────────────────────────────────────────
+    def _panel(self, parent, title):
+        outer = tk.Frame(parent, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
+        outer.pack(fill="x", pady=(0, 10))
+        inner = tk.Frame(outer, bg=PANEL)
+        inner.pack(padx=12, pady=10, fill="x")
+        tk.Label(inner, text=title, font=("Courier New", 7), fg=GREEN_DIM, bg=PANEL).pack(anchor="w", pady=(0, 8))
+        return inner
+
+    def _btn(self, parent, text, cmd, fg=GREEN, abg=None, width=None):
+        kw = dict(font=("Courier New", 8, "bold"), fg=fg,
+                  bg=DARK_BG, activeforeground=BG,
+                  activebackground=fg if abg is None else abg,
+                  relief="flat", bd=0, cursor="hand2",
+                  highlightthickness=1, highlightbackground=fg,
+                  padx=8, pady=6, command=cmd)
+        if width:
+            kw["width"] = width
+        return tk.Button(parent, text=text, **kw)
+
+    # ═══════════════════════════════════════════════════════
+    #  RENDERIZADO DEL CANVAS
+    # ═══════════════════════════════════════════════════════
+    def _render(self, anim_push_idx=None, anim_pop_offset=None):
+        """Dibuja la pila completa. 
+           anim_push_idx: índice del elemento que está entrando (se dibuja desplazado).
+           anim_pop_offset: píxeles hacia la derecha del elemento que está saliendo.
+        """
+        c = self.canvas
+        c.delete("all")
+        W = CANVAS_W
+        base_y = CANVAS_H - 20
+
+        datos = self.pila.to_list()
+        n = len(datos)
+
+        # Paredes
+        wall_xl = (W - ITEM_W) // 2 - 5
+        wall_xr = (W + ITEM_W) // 2 + 5
+        wall_top = max(10, base_y - n * ITEM_H - 30)
+        c.create_rectangle(wall_xl, wall_top, wall_xl + 4, base_y, fill=GREEN_DIM, outline="")
+        c.create_rectangle(wall_xr - 4, wall_top, wall_xr, base_y, fill=GREEN_DIM, outline="")
+
+        # Base
+        c.create_rectangle(wall_xl, base_y, wall_xr, base_y + 6, fill=GREEN, outline="")
+
+        # Etiqueta vacío
+        if not datos:
+            c.create_text(W // 2, base_y - 50,
+                          text="[ PILA VACIA ]", font=("Courier New", 9), fill=BORDER)
+        else:
+            for i, val in enumerate(datos):
+                y_bot = base_y - i * ITEM_H
+                y_top = y_bot - ITEM_H
+                x_l   = (W - ITEM_W) // 2
+                x_r   = (W + ITEM_W) // 2
+
+                is_top    = (i == n - 1)
+                in_hl     = (i in self.highlight)
+                is_anim_p = (anim_push_idx is not None and i == anim_push_idx)
+                is_anim_o = (anim_pop_offset is not None and i == n - 1)
+
+                # Desplazamiento de animación
+                dx, dy = 0, 0
+                if is_anim_p:
+                    dy = anim_push_idx * 0  # empuja desde arriba
+                if is_anim_o:
+                    dx = anim_pop_offset
+
+                # Colores
+                if in_hl and self.hl_color == BLUE:
+                    fill, border_c, text_c = "#002a40", BLUE, BLUE
+                elif in_hl:
+                    fill, border_c, text_c = "#2a1500", AMBER, AMBER
+                elif is_top:
+                    fill, border_c, text_c = "#002a15", GREEN, GREEN
+                else:
+                    fill, border_c, text_c = "#001a0d", GREEN_DIM, GREEN
+
+                bw = 2 if (is_top or in_hl) else 1
+
+                c.create_rectangle(x_l + dx, y_top + dy, x_r + dx, y_bot + dy,
+                                   fill=fill, outline=border_c, width=bw)
+
+                # Índice
+                c.create_text(x_l + dx + 14, (y_top + y_bot) // 2 + dy,
+                              text=f"[{i}]", font=("Courier New", 8),
+                              fill=GREEN_DIM, anchor="w")
+
+                # Valor
+                c.create_text(W // 2 + dx, (y_top + y_bot) // 2 + dy,
+                              text=str(val), font=("Courier New", 12, "bold"),
+                              fill=text_c)
+
+                # Dirección
+                addr = f"0x{0x1000 + i * 4:04X}"
+                c.create_text(x_r + dx - 10, (y_top + y_bot) // 2 + dy,
+                              text=addr, font=("Courier New", 7),
+                              fill="#003322", anchor="e")
+
+                # Etiqueta TOP
+                if is_top and anim_pop_offset is None:
+                    c.create_text(x_r + dx + 36, (y_top + y_bot) // 2 + dy,
+                                  text="<TOP", font=("Courier New", 7, "bold"),
+                                  fill=GREEN)
+
+        self._update_widgets()
+
+    def _update_widgets(self):
+        n = len(self.pila)
+        has = n > 0
+        for btn_name in ("btn_pop", "btn_peek", "btn_clear"):
+            if hasattr(self, btn_name):
+                getattr(self, btn_name).config(state="normal" if has else "disabled")
+        self.btn_undo.config(state="normal" if self._historial else "disabled")
+        self.lbl_size.config(text=str(n))
+        self.lbl_ops.config(text=str(self.total_ops))
+        self.lbl_hist.config(text=str(len(self._historial)))
+
+    # ═══════════════════════════════════════════════════════
+    #  ANIMACIONES
+    # ═══════════════════════════════════════════════════════
+    def _anim_push(self, callback):
+        """Anima el elemento del tope entrando desde arriba."""
+        idx = len(self.pila) - 1
+        steps = ANIM_STEPS
+        step  = [0]
+
+        def frame():
+            progress = step[0] / steps
+            # ease-out: empieza rápido, termina suave
+            ease = 1 - (1 - progress) ** 3
+            offset_y = int((1 - ease) * -ITEM_H)
+            self._render_push_frame(idx, offset_y)
+            step[0] += 1
+            if step[0] <= steps:
+                self._anim_job = self.root.after(ANIM_DELAY, frame)
+            else:
+                self._render()
+                if callback:
+                    callback()
+
+        frame()
+
+    def _render_push_frame(self, top_idx, offset_y):
+        """Renderiza todos los elementos; el tope aparece con offset_y."""
+        c = self.canvas
+        c.delete("all")
+        W = CANVAS_W
+        base_y = CANVAS_H - 20
+        datos = self.pila.to_list()
+        n = len(datos)
+
+        wall_xl = (W - ITEM_W) // 2 - 5
+        wall_xr = (W + ITEM_W) // 2 + 5
+        wall_top = max(10, base_y - n * ITEM_H - 30)
+        c.create_rectangle(wall_xl, wall_top, wall_xl + 4, base_y, fill=GREEN_DIM, outline="")
+        c.create_rectangle(wall_xr - 4, wall_top, wall_xr, base_y, fill=GREEN_DIM, outline="")
+        c.create_rectangle(wall_xl, base_y, wall_xr, base_y + 6, fill=GREEN, outline="")
+
+        for i, val in enumerate(datos):
+            y_bot = base_y - i * ITEM_H
+            y_top = y_bot - ITEM_H
+            x_l   = (W - ITEM_W) // 2
+            x_r   = (W + ITEM_W) // 2
+            dy    = offset_y if i == top_idx else 0
+
+            is_top = (i == n - 1)
+            fill   = "#002a15" if is_top else "#001a0d"
+            border = GREEN    if is_top else GREEN_DIM
+
+            c.create_rectangle(x_l, y_top + dy, x_r, y_bot + dy,
+                               fill=fill, outline=border, width=2 if is_top else 1)
+            c.create_text(x_l + 14, (y_top + y_bot) // 2 + dy,
+                          text=f"[{i}]", font=("Courier New", 8), fill=GREEN_DIM, anchor="w")
+            c.create_text(W // 2, (y_top + y_bot) // 2 + dy,
+                          text=str(val), font=("Courier New", 12, "bold"), fill=GREEN)
+
+    def _anim_pop(self, val_removido, callback):
+        """Anima el elemento del tope saliendo hacia la derecha."""
+        steps = ANIM_STEPS
+        step  = [0]
+        max_offset = CANVAS_W
+
+        def frame():
+            progress  = step[0] / steps
+            ease      = progress ** 2  # aceleración
+            offset_x  = int(ease * max_offset)
+            self._render_pop_frame(offset_x)
+            step[0] += 1
+            if step[0] <= steps:
+                self._anim_job = self.root.after(ANIM_DELAY, frame)
+            else:
+                self._render()
+                if callback:
+                    callback()
+
+        frame()
+
+    def _render_pop_frame(self, offset_x):
+        """Renderiza todos; el tope se mueve a la derecha."""
+        c = self.canvas
+        c.delete("all")
+        W = CANVAS_W
+        base_y = CANVAS_H - 20
+        datos = self.pila.to_list()
+        n = len(datos)
+
+        wall_xl = (W - ITEM_W) // 2 - 5
+        wall_xr = (W + ITEM_W) // 2 + 5
+        wall_top = max(10, base_y - (n + 1) * ITEM_H - 30)
+        c.create_rectangle(wall_xl, wall_top, wall_xl + 4, base_y, fill=GREEN_DIM, outline="")
+        c.create_rectangle(wall_xr - 4, wall_top, wall_xr, base_y, fill=GREEN_DIM, outline="")
+        c.create_rectangle(wall_xl, base_y, wall_xr, base_y + 6, fill=GREEN, outline="")
+
+        # Dibuja los que quedan (índices 0..n-1) normal
+        for i, val in enumerate(datos):
+            y_bot = base_y - i * ITEM_H
+            y_top = y_bot - ITEM_H
+            x_l   = (W - ITEM_W) // 2
+            x_r   = (W + ITEM_W) // 2
+            c.create_rectangle(x_l, y_top, x_r, y_bot,
+                               fill="#001a0d", outline=GREEN_DIM)
+            c.create_text(x_l + 14, (y_top + y_bot) // 2,
+                          text=f"[{i}]", font=("Courier New", 8), fill=GREEN_DIM, anchor="w")
+            c.create_text(W // 2, (y_top + y_bot) // 2,
+                          text=str(val), font=("Courier New", 12, "bold"), fill=GREEN)
+
+        # Dibuja el elemento que sale encima (índice n)
+        i = n
+        y_bot = base_y - i * ITEM_H
+        y_top = y_bot - ITEM_H
+        x_l   = (W - ITEM_W) // 2 + offset_x
+        x_r   = (W + ITEM_W) // 2 + offset_x
+        alpha = max(0, 1 - offset_x / CANVAS_W)
+        # Simula desvanecimiento cambiando el borde
+        border = GREEN if offset_x < CANVAS_W // 2 else BORDER
+        c.create_rectangle(x_l, y_top, x_r, y_bot,
+                           fill="#002a15", outline=border, width=2)
+        c.create_text((x_l + x_r) // 2, (y_top + y_bot) // 2,
+                      text=self._pop_val_preview,
+                      font=("Courier New", 12, "bold"), fill=GREEN)
+
+    # ═══════════════════════════════════════════════════════
+    #  OPERACIONES
+    # ═══════════════════════════════════════════════════════
+    def _snapshot(self):
+        return copy.deepcopy(self.pila.to_list())
+
+    def _push(self):
+        val = self.entry.get().strip()
+        if not val:
+            self._set_status("Ingresa un valor antes de PUSH.", "warn")
+            self._log("PUSH fallido: campo vacio.", "err")
+            return
+        try:
+            snap = self._snapshot()
+            self.pila.push(val)
+            self._historial.append(("PUSH", snap))
+            if len(self._historial) > 20:
+                self._historial.pop(0)
+            self.total_ops += 1
+            self.highlight = []
+            self._render()  # render previo (sin tope todavía)
+            self.entry.delete(0, "end")
+            # Anima entrada
+            self._anim_push(callback=None)
+            self._set_status(f'PUSH -> "{val}" agregado al tope.', "ok")
+            self._log(f'PUSH -> "{val}" en [{len(self.pila)-1}]', "push")
+        except OverflowError as e:
+            self._set_status(str(e), "warn")
+            self._log(str(e), "err")
+
+    def _pop(self):
+        if self.pila.vacia:
+            self._set_status("Pila vacia. Nada que extraer.", "err")
+            return
+        snap = self._snapshot()
+        val  = self.pila.peek()
+        self._pop_val_preview = val
+        self.pila.pop()
+        self._historial.append(("POP", snap))
+        if len(self._historial) > 20:
+            self._historial.pop(0)
+        self.total_ops += 1
+        self.highlight = []
+
+        def after_anim():
+            self._render()
+            self._set_status(f'POP -> "{val}" eliminado del tope.', "warn")
+            self._log(f'POP <- "{val}" extraido de [{len(self.pila)}]', "pop")
+
+        self._anim_pop(val, after_anim)
+
+    def _peek(self):
+        if self.pila.vacia:
+            self._set_status("Pila vacia.", "err")
+            return
+        val = self.pila.peek()
+        self.total_ops += 1
+        self.highlight  = [len(self.pila) - 1]
+        self.hl_color   = BLUE
+        self._render()
+        self._set_status(f'PEEK -> Tope: "{val}" (sin eliminar).', "info")
+        self._log(f'PEEK -> tope es "{val}" en [{len(self.pila)-1}]', "info")
+        self.root.after(1400, self._clear_hl)
+
+    def _clear(self):
+        if self.pila.vacia:
+            return
+        n    = len(self.pila)
+        snap = self._snapshot()
+        self.pila.clear()
+        self._historial.append(("CLEAR", snap))
+        if len(self._historial) > 20:
+            self._historial.pop(0)
+        self.total_ops += 1
+        self.highlight  = []
+        self._render()
+        self._set_status(f"Pila limpiada. {n} elemento(s) eliminados.", "err")
+        self._log(f"CLEAR -> {n} elemento(s) eliminados.", "err")
+
+    def _undo(self):
+        if not self._historial:
+            self._set_status("Sin operaciones para deshacer.", "warn")
+            return
+        accion, snap = self._historial.pop()
+        self.pila.from_list(snap)
+        self.total_ops += 1
+        self.highlight  = []
+        self._render()
+        self._set_status(f'DESHACER -> revertido "{accion}".', "undo")
+        self._log(f'UNDO -> "{accion}" revertido. Pila: {snap}', "undo")
+
+    def _buscar(self):
+        val = self.search_entry.get().strip()
+        if not val:
+            self._set_status("Ingresa un valor para buscar.", "warn")
+            return
+        resultados = self.pila.buscar(val)
+        self.total_ops += 1
+        if resultados:
+            self.highlight = resultados
+            self.hl_color  = AMBER
+            self._render()
+            pos = ", ".join(f"[{i}]" for i in resultados)
+            self._set_status(f'BUSCAR -> "{val}" encontrado en {pos}.', "search")
+            self._log(f'BUSCAR -> "{val}" en posiciones {pos}.', "search")
+            self.root.after(2000, self._clear_hl)
+        else:
+            self.highlight = []
+            self._render()
+            self._set_status(f'BUSCAR -> "{val}" no encontrado.', "err")
+            self._log(f'BUSCAR -> "{val}" no existe en la pila.', "err")
+
+    def _guardar(self):
+        if self.pila.vacia:
+            self._set_status("La pila esta vacia. Nada que guardar.", "warn")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Archivo de texto", "*.txt"), ("JSON", "*.json")],
+            title="Guardar pila")
+        if not path:
+            return
+        datos = self.pila.to_list()
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"pila": datos, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
+            self._set_status(f"Pila guardada en {path.split('/')[-1]}.", "ok")
+            self._log(f'GUARDAR -> "{path.split("/")[-1]}" ({len(datos)} elementos).', "save")
+        except Exception as e:
+            self._set_status(f"Error al guardar: {e}", "err")
+
+    def _cargar(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Archivo de texto", "*.txt"), ("JSON", "*.json")],
+            title="Cargar pila")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            datos = data.get("pila", [])
+            if not isinstance(datos, list):
+                raise ValueError("Formato invalido")
+            snap = self._snapshot()
+            self.pila.from_list(datos)
+            self._historial.append(("CARGAR", snap))
+            self.total_ops += 1
+            self.highlight  = []
+            self._render()
+            self._set_status(f"Pila cargada: {len(datos)} elemento(s).", "ok")
+            self._log(f'CARGAR -> "{path.split("/")[-1]}" ({len(datos)} elementos).', "save")
+        except Exception as e:
+            self._set_status(f"Error al cargar: {e}", "err")
+            self._log(f"CARGAR fallido: {e}", "err")
+
+    # ── Helpers internos ──────────────────────────────────
+    def _clear_hl(self):
+        self.highlight = []
+        self._render()
+
+    def _set_status(self, msg, mode="ok"):
+        colors = {"ok": GREEN, "warn": AMBER, "err": RED,
+                  "info": BLUE, "undo": PURPLE, "search": AMBER}
+        color = colors.get(mode, GREEN_DIM)
+        self.status_var.set(msg)
+        self.dot.itemconfig(self._dot_oval, fill=color)
+        if self._blink_job:
+            self.root.after_cancel(self._blink_job)
+        self._blink_job = self.root.after(3500, lambda:
+            self.dot.itemconfig(self._dot_oval, fill=GREEN_DIM))
+
+    def _log(self, msg, tag="dim"):
+        ts = time.strftime("%H:%M:%S")
+        self.log_text.config(state="normal")
+        self.log_text.insert("end", ts + "  ", "ts")
+        self.log_text.insert("end", msg + "\n", tag)
+        self.log_text.config(state="disabled")
+        self.log_text.see("end")
+
+
+# ── Entrada ────────────────────────────────────────────────
+if __name__ == "__main__":
+    root = tk.Tk()
+    app  = AppPila(root)
+
+    root.update_idletasks()
+    w = root.winfo_width()
+    h = root.winfo_height()
+    x = (root.winfo_screenwidth()  - w) // 2
+    y = (root.winfo_screenheight() - h) // 2
+    root.geometry(f"+{x}+{y}")
+
+    root.mainloop()
