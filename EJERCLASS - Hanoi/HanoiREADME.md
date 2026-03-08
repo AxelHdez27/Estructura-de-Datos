@@ -7,8 +7,8 @@ ventana.mainloop(): Mantiene la ventana de tkinter activa y procesa todos los ev
 
 2. Tiempos de ejecución
 Se midió el tiempo que tarda la función hanoi() en generar la lista completa de movimientos. Los valores de n=5 y n=10 fueron medidos directamente. Los de n=30 y n=64 son calculados, ya que n=30 agota la memoria RAM al intentar guardar más de mil millones de movimientos, y n=64 es físicamente imposible de ejecutar.
-Con 5 discos se generan 31 movimientos en 6.12 segundos.
-Con 10 discos se generan 1,023 movimientos en 209.22 segundos.
+Con 5 discos se generan 31 movimientos en 0.000021 segundos. Animados a 200ms por movimiento, la solución se ve completa en unos 6.12 segundos.
+Con 10 discos se generan 1,023 movimientos en 0.000314 segundos. La animación completa tomo unos 209.22 segundos .
 Con 30 discos se generarían 1,073,741,823 movimientos. Solo calcularlos tomaría unos 95 segundos y consumiría varios gigabytes de RAM. Animarlos a 200ms cada uno tomaría aproximadamente 68 años.
 Con 64 discos el número de movimientos es 18,446,744,073,709,551,615. Guardar esa lista requeriría más de 130,000 petabytes de RAM, lo cual es imposible. Si de alguna forma pudiera ejecutarse, la animación tardaría unos 585,000 millones de años, más de 40,000 veces la edad actual del universo.
 
