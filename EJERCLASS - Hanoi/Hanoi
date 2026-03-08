@@ -1,0 +1,116 @@
+import tkinter as tk
+import time
+
+movimientos = []
+torres = []
+contador = 0
+inicio_tiempo = 0
+
+# Iterativo para evitar RecursionError con n grande
+def hanoi(n, origen, auxiliar, destino):
+    pila = [(n, origen, auxiliar, destino)]
+    while pila:
+        m, o, a, d = pila.pop()
+        if m == 1:
+            movimientos.append((o, d))
+        else:
+            pila.append((m-1, a, o, d))
+            pila.append((1,   o, a, d))
+            pila.append((m-1, o, d, a))
+
+def dibujar():
+    canvas.delete("all")
+
+    posiciones = [120, 300, 480]
+
+    for i in range(3):
+        canvas.create_line(posiciones[i], 100, posiciones[i], 350, width=6)
+
+        y = 350
+        for disco in torres[i]:
+            ancho = disco * 12
+            canvas.create_rectangle(posiciones[i]-ancho, y-20,
+                                    posiciones[i]+ancho, y,
+                                    fill="skyblue")
+            if n_discos <= 20:
+                canvas.create_text(posiciones[i], y-10, text=str(disco))
+            y -= 20
+
+def animar():
+    global contador
+
+    if movimientos:
+        origen, destino = movimientos.pop(0)
+
+        disco = torres[origen].pop()
+        torres[destino].append(disco)
+
+        contador += 1
+
+        tiempo_actual = round(time.time() - inicio_tiempo, 2)
+
+        label_mov.config(text="Movimientos: " + str(contador))
+        label_tiempo.config(text="Tiempo: " + str(tiempo_actual) + " s")
+
+        dibujar()
+
+        ventana.after(200, animar)
+    else:
+        label_estado.config(text="¡Completado!")
+
+def iniciar():
+    global torres, movimientos, contador, inicio_tiempo, n_discos
+
+    try:
+        n = int(entrada.get())
+    except ValueError:
+        label_estado.config(text="Ingresa un número válido")
+        return
+
+    if n < 1 or n > 64:
+        label_estado.config(text="Ingresa un número entre 1 y 64")
+        return
+
+    n_discos = n
+    torres = [list(range(n, 0, -1)), [], []]
+    movimientos = []
+    contador = 0
+
+    label_estado.config(text="Calculando movimientos...")
+    ventana.update()
+
+    hanoi(n, 0, 1, 2)
+
+    inicio_tiempo = time.time()
+    label_estado.config(text="Ejecutando...")
+
+    dibujar()
+    animar()
+
+n_discos = 1
+
+ventana = tk.Tk()
+ventana.title("Torre de Hanoi")
+ventana.geometry("600x480")
+
+tk.Label(ventana, text="Número de discos (1-64)").pack()
+
+entrada = tk.Entry(ventana)
+entrada.pack()
+
+boton = tk.Button(ventana, text="Iniciar", command=iniciar)
+boton.pack(pady=10)
+
+label_mov = tk.Label(ventana, text="Movimientos: 0", font=("Arial", 12))
+label_mov.pack()
+
+label_tiempo = tk.Label(ventana, text="Tiempo: 0 s", font=("Arial", 12))
+label_tiempo.pack()
+
+label_estado = tk.Label(ventana, text="", font=("Arial", 10, "italic"), fg="gray")
+label_estado.pack()
+
+canvas = tk.Canvas(ventana, width=600, height=350)
+canvas.pack()
+
+ventana.mainloop()
