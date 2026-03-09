@@ -1,1 +1,86 @@
+def _pop_por_valor(self):
+    val = self.pop_entry.get().strip()
 
+    # Campo vacío
+    if not val:
+        self._set_status("Ingresa un valor para hacer POP.", "warn")
+        self._log("POP fallido: campo vacio.", "err")
+        return
+
+    # Pila llena y el valor no existe → no hay espacio para el push temporal
+    if len(self.pila) >= MAX_SIZE and not self.pila.buscar(val):
+        self._set_status(
+            f'"{val}" no existe y la pila esta LLENA. No se puede agregar.', "err")
+        self._log(f'POP fallido: "{val}" no existe y pila llena.', "err")
+        return
+
+    # ── CASO A: el valor NO existe → push automático + pop ──
+    if not self.pila.buscar(val):
+        snap = self._snapshot()
+        self._log(f'"{val}" no existe. Se agrega al tope y se elimina.', "auto")
+        self._set_status(f'"{val}" no estaba. Agregando al tope...', "warn")
+
+        # 1) Push
+        self.pila.push(val)
+        self.highlight = [len(self.pila) - 1]
+        self.hl_color  = AMBER
+        self._render()
+        self._anim_push(callback=None)
+
+        # 2) Pop después de que termine la animación de push
+        def hacer_pop():
+            self._pop_val_preview = val
+            self.pila.pop()
+            self._historial.append(("AUTO-PUSH-POP", snap))
+            if len(self._historial) > 20:
+                self._historial.pop(0)
+            self.total_ops += 1
+            self.highlight = []
+
+            def fin():
+                self._render()
+                self._set_status(
+                    f'"{val}" fue agregado y eliminado al instante.', "ok")
+                self._log(
+                    f'AUTO-POP -> "{val}" eliminado. Pila sin cambios netos.', "auto")
+                self.pop_entry.delete(0, "end")
+
+            self._anim_pop(fin)
+
+        self.root.after(ANIM_STEPS * ANIM_DELAY + 350, hacer_pop)
+        return
+
+    # ── CASO B: el valor SÍ existe → pop normal del tope ──
+    # En LIFO solo podemos sacar el tope, así que verificamos
+    tope_actual = self.pila.peek()
+    if val != tope_actual:
+        self._set_status(
+            f'"{val}" existe pero NO es el tope (tope actual: "{tope_actual}").'
+            f' En LIFO solo se puede sacar el tope.', "warn")
+        self._log(
+            f'POP rechazado: "{val}" no es el tope. Tope actual: "{tope_actual}".', "err")
+        # Resaltar dónde está
+        posiciones = self.pila.buscar(val)
+        self.highlight = posiciones
+        self.hl_color  = AMBER
+        self._render()
+        self.root.after(1800, self._clear_hl)
+        return
+
+    # El valor es exactamente el tope → pop normal
+    snap = self._snapshot()
+    self._pop_val_preview = val
+    self.pila.pop()
+    self._historial.append(("POP", snap))
+    if len(self._historial) > 20:
+        self._historial.pop(0)
+    self.total_ops += 1
+    self.highlight = []
+
+    def after_anim():
+        self._render()
+        self._set_status(f'POP -> "{val}" eliminado del tope.', "warn")
+        self._log(f'POP <- "{val}" extraido del tope.', "pop")
+        self.pop_entry.delete(0, "end")
+
+    self._anim_pop(after_anim)
