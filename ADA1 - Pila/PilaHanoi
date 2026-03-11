@@ -1,0 +1,122 @@
+# ============================================================
+#  PROBLEMA 2 — Torres de Hanoi (3 discos)
+#  Estructura de datos: Pila (implementada manualmente)
+# ============================================================
+
+class Pila:
+    """Implementación de una pila (LIFO) con nombre para representar una torre."""
+
+    def __init__(self, nombre: str):
+        self.nombre = nombre
+        self._datos = []
+
+    def push(self, disco: int):
+        """Coloca un disco encima de la torre."""
+        if not self.esta_vacia() and self._datos[-1] < disco:
+            raise ValueError(
+                f"No se puede poner disco {disco} sobre disco {self._datos[-1]} en torre {self.nombre}"
+            )
+        self._datos.append(disco)
+
+    def pop(self) -> int:
+        """Retira el disco del tope."""
+        if self.esta_vacia():
+            raise IndexError(f"Torre {self.nombre} vacía")
+        return self._datos.pop()
+
+    def peek(self) -> int:
+        """Muestra el disco del tope sin retirarlo."""
+        return self._datos[-1] if not self.esta_vacia() else None
+
+    def esta_vacia(self) -> bool:
+        return len(self._datos) == 0
+
+    def __str__(self):
+        return f"{self.nombre}: {self._datos[::-1] if self._datos else '[ vacía ]'}"
+
+
+# -------------------------------------------------------
+#  Lógica de Hanoi usando las pilas
+# -------------------------------------------------------
+
+movimientos = []   # registro global de pasos
+
+def hanoi(n: int, origen: Pila, destino: Pila, auxiliar: Pila):
+    """
+    Resuelve Hanoi recursivamente moviendo n discos
+    desde 'origen' hasta 'destino' usando 'auxiliar'.
+
+    Caso base  : n == 1 → mover directamente.
+    Caso recursivo:
+      1. Mover los (n-1) discos superiores de origen → auxiliar.
+      2. Mover el disco n (más grande) de origen → destino.
+      3. Mover los (n-1) discos de auxiliar → destino.
+    """
+    if n == 0:
+        return
+
+    # Paso 1: mueve n-1 discos al auxiliar
+    hanoi(n - 1, origen, auxiliar, destino)
+
+    # Paso 2: mueve el disco grande al destino
+    disco = origen.pop()
+    destino.push(disco)
+    movimientos.append((disco, origen.nombre, destino.nombre))
+
+    # Paso 3: mueve los n-1 discos del auxiliar al destino
+    hanoi(n - 1, auxiliar, destino, origen)
+
+
+def mostrar_estado(torres, paso=None):
+    separador = "─" * 45
+    if paso:
+        print(f"\n  Paso {paso}")
+    print(f"  {separador}")
+    for t in torres:
+        print(f"  {t}")
+    print(f"  {separador}")
+
+
+# -------------------------------------------------------
+#  Ejecución principal
+# -------------------------------------------------------
+
+if __name__ == "__main__":
+    N = 3   # número de discos (modifica aquí si quieres probar con más)
+
+    # Crear las tres torres
+    A = Pila("A (Origen)   ")
+    B = Pila("B (Auxiliar) ")
+    C = Pila("C (Destino)  ")
+
+    # Cargar los discos en la torre origen (mayor abajo)
+    for disco in range(N, 0, -1):
+        A.push(disco)
+
+    print("\n" + "═" * 50)
+    print("   TORRES DE HANOI — 3 DISCOS")
+    print("═" * 50)
+    print("\n  Estado inicial:")
+    mostrar_estado([A, B, C])
+
+    # Resolver
+    hanoi(N, A, C, B)
+
+    # Mostrar el log de movimientos
+    print(f"\n  Secuencia de {len(movimientos)} movimientos:")
+    print("  " + "─" * 45)
+    for i, (disco, desde, hasta) in enumerate(movimientos, 1):
+        print(f"  Paso {i:>2}: Disco {disco}  →  {desde.strip()} ➜  {hasta.strip()}")
+
+    print(f"\n  Estado final:")
+    mostrar_estado([A, B, C])
+
+    # Verificación
+    esperado = list(range(1, N + 1))  # [1, 2, 3]
+    obtenido = C._datos[::-1]
+    if obtenido == esperado:
+        print(f"\n  ✔ ¡Éxito! Todos los discos están en C (Destino).")
+        print(f"  ✔ Fórmula teórica: 2^{N} - 1 = {2**N - 1} movimientos. "
+              f"Realizados: {len(movimientos)}.\n")
+    else:
+        print("  ✘ Algo salió mal.")
