@@ -1,0 +1,254 @@
+"""
+Problema 2: Sistema de Colas de Servicios – Compañía de Seguros
+----------------------------------------------------------------
+Comandos:
+  C <num_servicio>  → Llega un cliente al servicio indicado.
+  A <num_servicio>  → Atender próximo cliente del servicio.
+  E                 → Ver estado de todas las colas.
+  Q                 → Salir del sistema.
+  ?                 → Mostrar ayuda.
+"""
+
+
+class Cola:
+    """Implementación de una Cola (FIFO) con lista enlazada."""
+
+    class _Nodo:
+        def __init__(self, dato):
+            self.dato = dato
+            self.siguiente = None
+
+    def __init__(self):
+        self._frente = None
+        self._final = None
+        self._tamaño = 0
+
+    def encolar(self, dato):
+        nuevo = self._Nodo(dato)
+        if self._final is None:
+            self._frente = nuevo
+            self._final = nuevo
+        else:
+            self._final.siguiente = nuevo
+            self._final = nuevo
+        self._tamaño += 1
+
+    def desencolar(self):
+        if self.esta_vacia():
+            raise IndexError("La cola está vacía.")
+        dato = self._frente.dato
+        self._frente = self._frente.siguiente
+        if self._frente is None:
+            self._final = None
+        self._tamaño -= 1
+        return dato
+
+    def esta_vacia(self):
+        return self._tamaño == 0
+
+    def tamaño(self):
+        return self._tamaño
+
+    def __str__(self):
+        elementos = []
+        actual = self._frente
+        while actual:
+            elementos.append(str(actual.dato))
+            actual = actual.siguiente
+        return " -> ".join(elementos) if elementos else "(vacía)"
+
+
+# ─────────────────────────────────────────────
+#  Servicios disponibles
+# ─────────────────────────────────────────────
+
+SERVICIOS = {
+    1: "Emisión de pólizas",
+    2: "Renovaciones",
+    3: "Siniestros / Reclamos",
+    4: "Pagos y facturación",
+    5: "Información general",
+}
+
+
+# ─────────────────────────────────────────────
+#  Sistema de atención
+# ─────────────────────────────────────────────
+
+class SistemaAtencion:
+
+    def __init__(self, servicios: dict):
+        self.servicios = servicios
+        self.colas = {k: Cola() for k in servicios}
+        self.contadores = {k: 0 for k in servicios}
+
+    def llega_cliente(self, servicio: int) -> int:
+        if servicio not in self.colas:
+            raise ValueError(f"El servicio {servicio} no existe. Válidos: {list(self.servicios.keys())}")
+        self.contadores[servicio] += 1
+        ticket = self.contadores[servicio]
+        self.colas[servicio].encolar(ticket)
+        return ticket
+
+    def atender_cliente(self, servicio: int) -> int:
+        if servicio not in self.colas:
+            raise ValueError(f"El servicio {servicio} no existe. Válidos: {list(self.servicios.keys())}")
+        if self.colas[servicio].esta_vacia():
+            raise IndexError(f"No hay clientes en espera para '{self.servicios[servicio]}'.")
+        return self.colas[servicio].desencolar()
+
+    def mostrar_estado(self):
+        print()
+        print("  ╔═══╦══════════════════════════════════╦═════════╗")
+        print("  ║ # ║ Servicio                         ║ Espera  ║")
+        print("  ╠═══╬══════════════════════════════════╬═════════╣")
+        for num, nombre in self.servicios.items():
+            espera = self.colas[num].tamaño()
+            indicador = "●" * min(espera, 5)
+            print(f"  ║ {num} ║ {nombre:<32} ║ {espera:>3}  {indicador:<5}║")
+        print("  ╚═══╩══════════════════════════════════╩═════════╝")
+        print()
+
+
+# ─────────────────────────────────────────────
+#  Menú de ayuda
+# ─────────────────────────────────────────────
+
+def mostrar_ayuda(servicios):
+    print()
+    print("  ╔══════════════════════════════════════════════════╗")
+    print("  ║      SISTEMA DE COLAS – COMPAÑÍA DE SEGUROS     ║")
+    print("  ╠══════════════════════════════════════════════════╣")
+    print("  ║  COMANDOS DISPONIBLES:                          ║")
+    print("  ║                                                 ║")
+    print("  ║   C <servicio>  → Cliente llega al servicio     ║")
+    print("  ║   A <servicio>  → Atender próximo cliente       ║")
+    print("  ║   E             → Estado de todas las colas     ║")
+    print("  ║   ?             → Mostrar esta ayuda            ║")
+    print("  ║   Q             → Salir                         ║")
+    print("  ╠══════════════════════════════════════════════════╣")
+    print("  ║  SERVICIOS DISPONIBLES:                         ║")
+    for num, nombre in servicios.items():
+        print(f"  ║   {num} – {nombre:<43}║")
+    print("  ╠══════════════════════════════════════════════════╣")
+    print("  ║  EJEMPLOS DE USO:                               ║")
+    print("  ║   C 1  →  Cliente llega a Emisión de pólizas   ║")
+    print("  ║   C1   →  También funciona sin espacio          ║")
+    print("  ║   A 3  →  Atender en Siniestros / Reclamos     ║")
+    print("  ╚══════════════════════════════════════════════════╝")
+    print()
+
+
+# ─────────────────────────────────────────────
+#  Parseo flexible de entrada
+# ─────────────────────────────────────────────
+
+def parsear_entrada(entrada: str):
+    """
+    Acepta: 'C 1', 'c1', 'C1', 'c 1', 'A3', 'a 3', 'E', 'Q', '?'
+    Retorna (comando_upper, numero_int_o_None)
+    """
+    entrada = entrada.strip()
+    if not entrada:
+        return None, None
+
+    comando = entrada[0].upper()
+    resto = entrada[1:].strip()
+
+    numero = None
+    if resto:
+        try:
+            numero = int(resto)
+        except ValueError:
+            numero = -1  # indica que se escribió algo inválido como número
+
+    return comando, numero
+
+
+# ─────────────────────────────────────────────
+#  Bucle principal
+# ─────────────────────────────────────────────
+
+def main():
+    sistema = SistemaAtencion(SERVICIOS)
+    mostrar_ayuda(SERVICIOS)
+
+    while True:
+        try:
+            entrada = input("  >> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  [Sistema finalizado]")
+            break
+
+        if not entrada:
+            continue
+
+        comando, numero = parsear_entrada(entrada)
+
+        # ── Salir ──────────────────────────────────────────────────────────
+        if comando == "Q":
+            print("\n   Sistema cerrado. ¡Hasta luego!\n")
+            break
+
+        # ── Ayuda ──────────────────────────────────────────────────────────
+        elif comando == "?":
+            mostrar_ayuda(SERVICIOS)
+
+        # ── Estado ─────────────────────────────────────────────────────────
+        elif comando == "E":
+            sistema.mostrar_estado()
+
+        # ── Llegada de cliente ─────────────────────────────────────────────
+        elif comando == "C":
+            if numero is None:
+                print(f"\n   Falta el número de servicio. Ejemplo: C 1 o C1")
+                print(f"     Servicios válidos: {list(SERVICIOS.keys())}\n")
+            elif numero == -1:
+                print(f"\n  El número de servicio debe ser un entero. Ejemplo: C 1\n")
+            else:
+                try:
+                    ticket = sistema.llega_cliente(numero)
+                    nombre_serv = SERVICIOS[numero]
+                    print()
+                    print(f"   Cliente registrado exitosamente")
+                    print(f"  ┌──────────────────────────────────────┐")
+                    print(f"  │  Servicio  : {nombre_serv:<25}│")
+                    print(f"  │  Ticket    : {ticket:04d}                      │")
+                    print(f"  │  En espera : {sistema.colas[numero].tamaño():<25}│")
+                    print(f"  └──────────────────────────────────────┘")
+                    print()
+                except ValueError as e:
+                    print(f"\n  ⚠ {e}\n")
+
+        # ── Atender cliente ────────────────────────────────────────────────
+        elif comando == "A":
+            if numero is None:
+                print(f"\n   Falta el número de servicio. Ejemplo: A 1 o A1")
+                print(f"     Servicios válidos: {list(SERVICIOS.keys())}\n")
+            elif numero == -1:
+                print(f"\n   El número de servicio debe ser un entero. Ejemplo: A 3\n")
+            else:
+                try:
+                    ticket = sistema.atender_cliente(numero)
+                    nombre_serv = SERVICIOS[numero]
+                    print()
+                    print(f"   ¡LLAMANDO NÚMERO {ticket:04d}!")
+                    print(f"  ┌──────────────────────────────────────┐")
+                    print(f"  │  Servicio  : {nombre_serv:<25}│")
+                    print(f"  │  Número    : {ticket:04d}                      │")
+                    print(f"  │  En espera : {sistema.colas[numero].tamaño():<25}│")
+                    print(f"  └──────────────────────────────────────┘")
+                    print()
+                except (ValueError, IndexError) as e:
+                    print(f"\n   {e}\n")
+
+        # ── Comando desconocido ────────────────────────────────────────────
+        else:
+            print(f"\n   Comando '{comando}' no reconocido.")
+            print(f"     Comandos válidos: C, A, E, Q, ?")
+            print(f"     Escriba ? para ver la ayuda.\n")
+
+
+if __name__ == "__main__":
+    main()
+    
