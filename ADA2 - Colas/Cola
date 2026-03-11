@@ -1,0 +1,158 @@
+"""
+Problema 1: Suma de dos Colas
+Función que recibe 2 Colas con números enteros y devuelve
+una nueva Cola con sus elementos sumados uno a uno.
+"""
+
+
+class Cola:
+    """Implementación de una Cola (FIFO) con lista enlazada."""
+
+    class _Nodo:
+        def __init__(self, dato):
+            self.dato = dato
+            self.siguiente = None
+
+    def __init__(self):
+        self._frente = None
+        self._final = None
+        self._tamaño = 0
+
+    def encolar(self, dato):
+        """Agrega un elemento al final de la cola."""
+        nuevo = self._Nodo(dato)
+        if self._final is None:
+            self._frente = nuevo
+            self._final = nuevo
+        else:
+            self._final.siguiente = nuevo
+            self._final = nuevo
+        self._tamaño += 1
+
+    def desencolar(self):
+        """Elimina y retorna el elemento del frente de la cola."""
+        if self.esta_vacia():
+            raise IndexError("La cola está vacía.")
+        dato = self._frente.dato
+        self._frente = self._frente.siguiente
+        if self._frente is None:
+            self._final = None
+        self._tamaño -= 1
+        return dato
+
+    def frente(self):
+        """Retorna el elemento del frente sin eliminarlo."""
+        if self.esta_vacia():
+            raise IndexError("La cola está vacía.")
+        return self._frente.dato
+
+    def esta_vacia(self):
+        """Retorna True si la cola está vacía."""
+        return self._tamaño == 0
+
+    def tamaño(self):
+        """Retorna el número de elementos en la cola."""
+        return self._tamaño
+
+    def __str__(self):
+        elementos = []
+        actual = self._frente
+        while actual:
+            elementos.append(str(actual.dato))
+            actual = actual.siguiente
+        return " -> ".join(elementos) if elementos else "(vacía)"
+
+
+# ─────────────────────────────────────────────
+#  Función principal del problema
+# ─────────────────────────────────────────────
+
+def sumar_colas(cola_a: Cola, cola_b: Cola) -> Cola:
+    """
+    Recibe dos colas de enteros y retorna una nueva Cola
+    cuyos elementos son la suma posicional de ambas.
+    Si una cola es más larga, los elementos sin par se
+    agregan tal cual a la cola resultado.
+    """
+    resultado = Cola()
+
+    while not cola_a.esta_vacia() and not cola_b.esta_vacia():
+        resultado.encolar(cola_a.desencolar() + cola_b.desencolar())
+
+    # Agregar los sobrantes de la cola más larga
+    while not cola_a.esta_vacia():
+        resultado.encolar(cola_a.desencolar())
+
+    while not cola_b.esta_vacia():
+        resultado.encolar(cola_b.desencolar())
+
+    return resultado
+
+
+# ─────────────────────────────────────────────
+#  Demostración
+# ─────────────────────────────────────────────
+
+def imprimir_tabla(cola_a_vals, cola_b_vals, resultado_vals):
+    ancho = 10
+    print(f"\n{'Cola A':>{ancho}}  {'Cola B':>{ancho}}  {'Resultado':>{ancho}}")
+    print("-" * (ancho * 3 + 4))
+    for a, b, r in zip(cola_a_vals, cola_b_vals, resultado_vals):
+        print(f"{a:>{ancho}}  {b:>{ancho}}  {r:>{ancho}}")
+
+
+def ingresar_cola(nombre: str) -> tuple:
+    """
+    Pide al usuario ingresar un número por fila.
+    Presionar Enter en blanco termina el ingreso.
+    """
+    print(f"\n  Ingreso de {nombre}")
+    print("  Ingrese un número por fila. [Enter vacío para terminar]")
+    cola = Cola()
+    valores = []
+    while True:
+        entrada = input(f"  {nombre} [{len(valores)+1}]: ").strip()
+        if entrada == "":
+            if not valores:
+                print("  ⚠ Debe ingresar al menos un número.")
+                continue
+            break
+        try:
+            num = int(entrada)
+            cola.encolar(num)
+            valores.append(num)
+        except ValueError:
+            print("  ⚠ Solo se permiten números enteros. Intente de nuevo.")
+    return cola, valores
+
+
+if __name__ == "__main__":
+    print("=" * 42)
+    print("   SUMA ELEMENTO A ELEMENTO DE DOS COLAS")
+    print("=" * 42)
+
+    cola_a, datos_a = ingresar_cola("Cola A")
+
+    while True:
+        cola_b, datos_b = ingresar_cola("Cola B")
+        if len(datos_b) == len(datos_a):
+            break
+        print(f"\n   Cola B tiene {len(datos_b)} elemento(s) pero Cola A tiene {len(datos_a)}.")
+        print("  Ambas colas deben tener la misma cantidad de filas. Intente de nuevo.")
+
+    print(f"\n  Cola A    : {cola_a}")
+    print(f"  Cola B    : {cola_b}")
+
+    cola_resultado = sumar_colas(cola_a, cola_b)
+
+    print(f"  Resultado : {cola_resultado}")
+
+    # Reconstruir lista resultado para la tabla
+    res_vals = []
+    temp = cola_resultado._frente
+    while temp:
+        res_vals.append(temp.dato)
+        temp = temp.siguiente
+
+    imprimir_tabla(datos_a, datos_b, res_vals)
+    print()
