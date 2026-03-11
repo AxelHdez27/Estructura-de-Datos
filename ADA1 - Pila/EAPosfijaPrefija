@@ -1,0 +1,136 @@
+# ============================================================
+#  PROBLEMA 1 — Evaluador de expresión en notación POSFIJA
+#  Estructura de datos: Pila (implementada manualmente)
+# ============================================================
+
+class Pila:
+    """Implementación de una pila (LIFO) usando lista."""
+
+    def __init__(self):
+        self._datos = []
+
+    def push(self, elemento):
+        """Agrega un elemento al tope de la pila."""
+        self._datos.append(elemento)
+
+    def pop(self):
+        """Elimina y retorna el elemento del tope."""
+        if self.esta_vacia():
+            raise IndexError("Pop en pila vacía")
+        return self._datos.pop()
+
+    def peek(self):
+        """Retorna el tope sin eliminarlo."""
+        if self.esta_vacia():
+            raise IndexError("Pila vacía")
+        return self._datos[-1]
+
+    def esta_vacia(self):
+        return len(self._datos) == 0
+
+    def __str__(self):
+        return str(self._datos)
+
+
+# -------------------------------------------------------
+#  Función principal: evalúa expresión posfija
+# -------------------------------------------------------
+
+def evaluar_postfija(expresion: str) -> float:
+    """
+    Evalúa una expresión aritmética en notación posfija (RPN).
+
+    Algoritmo:
+    - Recorre cada token de la expresión.
+    - Si es número  → apílalo.
+    - Si es operador → desapila dos operandos, opera y apila el resultado.
+    - Al final, el resultado único queda en el tope.
+
+    Operadores soportados: + - * / ^ %
+    """
+    pila = Pila()
+    operadores = {'+', '-', '*', '/', '^', '%'}
+    tokens = expresion.strip().split()
+
+    print(f"\n{'─'*50}")
+    print(f"  Expresión posfija: {expresion}")
+    print(f"{'─'*50}")
+    print(f"  {'Token':<10} {'Acción':<30} {'Pila'}")
+    print(f"{'─'*50}")
+
+    for token in tokens:
+        if token in operadores:
+            b = pila.pop()   # segundo operando
+            a = pila.pop()   # primer operando
+
+            if   token == '+': resultado = a + b
+            elif token == '-': resultado = a - b
+            elif token == '*': resultado = a * b
+            elif token == '/':
+                if b == 0:
+                    raise ZeroDivisionError("División por cero")
+                resultado = a / b
+            elif token == '^': resultado = a ** b
+            elif token == '%': resultado = a % b
+
+            pila.push(resultado)
+            accion = f"pop({a}, {b}) → {a}{token}{b}={resultado}"
+        else:
+            numero = float(token)
+            pila.push(numero)
+            accion = f"push({numero})"
+
+        print(f"  {token:<10} {accion:<30} {pila}")
+
+    if pila.esta_vacia():
+        raise ValueError("Expresión inválida")
+
+    resultado_final = pila.pop()
+    print(f"{'─'*50}")
+    print(f"  ✔  Resultado = {resultado_final}")
+    print(f"{'─'*50}\n")
+    return resultado_final
+
+
+# -------------------------------------------------------
+#  Entrada interactiva del usuario
+# -------------------------------------------------------
+
+if __name__ == "__main__":
+    print("\n" + "═" * 50)
+    print("   EVALUADOR DE EXPRESIÓN POSFIJA (RPN)")
+    print("═" * 50)
+    print("  Ingresa los números y operadores separados")
+    print("  por espacios en notación posfija.")
+    print("  Operadores válidos: + - * / ^ %")
+    print("  Ejemplo:  3 4 +       → resultado: 7")
+    print("  Ejemplo:  5 1 2 + 4 * + 3 -  → resultado: 14")
+    print("  Escribe 'salir' para terminar.")
+    print("═" * 50)
+
+    while True:
+        expresion = input("\n  Ingresa la expresión: ").strip()
+
+        if expresion.lower() == "salir":
+            print("\n  ¡Hasta luego!\n")
+            break
+
+        if not expresion:
+            print("  ⚠ No ingresaste nada. Intenta de nuevo.")
+            continue
+
+        try:
+            resultado = evaluar_postfija(expresion)
+            # Mostrar entero si no tiene decimales
+            if resultado == int(resultado):
+                print(f"  ══►  RESULTADO FINAL: {int(resultado)}")
+            else:
+                print(f"  ══►  RESULTADO FINAL: {resultado}")
+        except ZeroDivisionError:
+            print("  ✘ Error: División por cero.")
+        except IndexError:
+            print("  ✘ Error: Expresión mal formada (faltan operandos).")
+        except ValueError as e:
+            print(f"  ✘ Error: {e}")
+        except Exception as e:
+            print(f"  ✘ Error inesperado: {e}")
