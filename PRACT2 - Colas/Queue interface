@@ -1,0 +1,28 @@
+from abc import ABC, abstractmethod
+
+class QueueInterface(ABC):
+
+    # returns the number of elements in Queue
+    @abstractmethod
+    def size(self):
+        pass
+
+    # verifies if the Queue is empty. true if empty | false if not empty.
+    @abstractmethod
+    def isEmpty(self):
+        pass
+
+    # returns the first element in Queue. The element IS NOT REMOVED from Queue. Returns null if empty.
+    @abstractmethod
+    def front(self):
+        pass
+
+    # adds a new element to the Queue.
+    @abstractmethod
+    def enqueue(self, info):
+        pass
+
+    # returns the first element in Queue. The element IS REMOVED from Queue. Returns null if empty.
+    @abstractmethod
+    def dequeue(self):
+        pass
