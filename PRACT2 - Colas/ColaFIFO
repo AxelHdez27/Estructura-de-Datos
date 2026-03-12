@@ -1,0 +1,157 @@
+class Order:
+    def __init__(self, qtty, customer):
+        self.customer = customer
+        self.qtty = qtty
+
+    def print(self):
+        print(f"     Customer : {self.customer}")
+        print(f"     Quantity : {self.qtty}")
+        print(f"     ----------")
+
+    def getQtty(self):
+        return self.qtty
+
+    def getCustomer(self):
+        return self.customer
+
+
+class Node:
+    def __init__(self, info):
+        self.info = info
+        self.next = None
+
+    def getInfo(self):
+        return self.info
+
+    def getNext(self):
+        return self.next
+
+    def setNext(self, next_node):
+        self.next = next_node
+
+
+class LinkedQueue:
+    def __init__(self):
+        self.top = None
+        self.tail = None
+        self._size = 0
+
+    def size(self):
+        return self._size
+
+    def isEmpty(self):
+        return self._size == 0
+
+    def front(self):
+        if self.isEmpty():
+            return None
+        return self.top.getInfo()
+
+    def enqueue(self, info):
+        new_node = Node(info)
+        if self.isEmpty():
+            self.top = new_node
+            self.tail = new_node
+        else:
+            self.tail.setNext(new_node)
+            self.tail = new_node
+        self._size += 1
+
+    def dequeue(self):
+        if self.isEmpty():
+            return None
+        info = self.top.getInfo()
+        self.top = self.top.getNext()
+        if self.top is None:
+            self.tail = None
+        self._size -= 1
+        return info
+
+    def printInfo(self):
+        print()
+        print("  ╔══════════════════════════╗")
+        print("  ║       COLA ACTUAL        ║")
+        print("  ╠══════════════════════════╣")
+        print(f"  ║  Total de pedidos : {str(self._size).ljust(5)}║")
+        print("  ╠══════════════════════════╣")
+        if self.isEmpty():
+            print("  ║     (la cola está vacía) ║")
+        else:
+            node = self.top
+            i = 1
+            while node is not None:
+                order = node.getInfo()
+                tag = " [PRIMERO]" if i == 1 else (" [ÚLTIMO] " if node.getNext() is None else "          ")
+                print(f"  ║  Pedido #{i}{tag}       ║")
+                print(f"  ║    Customer : {order.getCustomer().ljust(12)}║")
+                print(f"  ║    Quantity : {str(order.getQtty()).ljust(12)}║")
+                if node.getNext() is not None:
+                    print("  ║           ↓              ║")
+                node = node.getNext()
+                i += 1
+        print("  ╚══════════════════════════╝")
+        print()
+
+
+if __name__ == "__main__":
+    queue = LinkedQueue()
+
+    print()
+    print("  ╔══════════════════════════════════╗")
+    print("  ║   SISTEMA DE PEDIDOS - COLA FIFO ║")
+    print("  ╚══════════════════════════════════╝")
+
+    while True:
+        print("  ┌─────────────────────────┐")
+        print("  │         MENÚ            │")
+        print("  ├─────────────────────────┤")
+        print("  │  1. Agregar pedido      │")
+        print("  │  2. Procesar pedido     │")
+        print("  │  3. Ver primer pedido   │")
+        print("  │  4. Ver toda la cola    │")
+        print("  │  5. Salir               │")
+        print("  └─────────────────────────┘")
+        opcion = input("  Elige una opción: ").strip()
+
+        if opcion == "1":
+            print()
+            customer = input("  Nombre del cliente : ").strip()
+            qtty = int(input("  Cantidad del pedido : ").strip())
+            queue.enqueue(Order(qtty, customer))
+            print(f"\n  ✔ Pedido de '{customer}' agregado al final de la cola.")
+            print(f"  → Pedidos en espera: {queue.size()}\n")
+
+        elif opcion == "2":
+            result = queue.dequeue()
+            print()
+            if result:
+                print(f"  ✔ Pedido procesado y eliminado de la cola:")
+                print(f"     Customer : {result.getCustomer()}")
+                print(f"     Quantity : {result.getQtty()}")
+                print(f"  → Pedidos restantes: {queue.size()}")
+            else:
+                print("  ✘ No hay pedidos en la cola.")
+            print()
+
+        elif opcion == "3":
+            result = queue.front()
+            print()
+            if result:
+                print("  → Primer pedido en la cola (no se elimina):")
+                print(f"     Customer : {result.getCustomer()}")
+                print(f"     Quantity : {result.getQtty()}")
+            else:
+                print("  ✘ La cola está vacía.")
+            print()
+
+        elif opcion == "4":
+            queue.printInfo()
+
+        elif opcion == "5":
+            print()
+            print("  Cerrando el sistema. ¡Hasta luego!")
+            print()
+            break
+
+        else:
+            print("\n  ✘ Opción no válida. Elige un número del 1 al 5.\n")
