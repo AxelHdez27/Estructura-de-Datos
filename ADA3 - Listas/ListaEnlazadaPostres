@@ -1,0 +1,312 @@
+# ──────────────── NODOS ────────────────────────
+
+class NodoIngrediente:
+    def __init__(self, nombre):
+        self.nombre = nombre.strip().lower()
+        self.siguiente = None
+
+class NodoPostre:
+    def __init__(self, nombre):
+        self.nombre = nombre.strip().lower()
+        self.ingredientes = ListaIngredientes()
+        self.siguiente = None
+
+# ──────────────── LISTA DE INGREDIENTES ────────
+
+class ListaIngredientes:
+    def __init__(self):
+        self.cabeza = None
+
+    def agregar(self, nombre):
+        nuevo = NodoIngrediente(nombre)
+        if not self.cabeza:
+            self.cabeza = nuevo
+        else:
+            actual = self.cabeza
+            while actual.siguiente:
+                actual = actual.siguiente
+            actual.siguiente = nuevo
+
+    def eliminar(self, nombre):
+        nombre = nombre.strip().lower()
+        if not self.cabeza:
+            return False
+        if self.cabeza.nombre == nombre:
+            self.cabeza = self.cabeza.siguiente
+            return True
+        actual = self.cabeza
+        while actual.siguiente:
+            if actual.siguiente.nombre == nombre:
+                actual.siguiente = actual.siguiente.siguiente
+                return True
+            actual = actual.siguiente
+        return False
+
+    def editar(self, viejo, nuevo):
+        actual = self.cabeza
+        while actual:
+            if actual.nombre == viejo.strip().lower():
+                actual.nombre = nuevo.strip().lower()
+                return True
+            actual = actual.siguiente
+        return False
+
+    def como_lista(self):
+        resultado, actual = [], self.cabeza
+        while actual:
+            resultado.append(actual.nombre)
+            actual = actual.siguiente
+        return resultado
+
+# ──────────────── LISTA DE POSTRES ─────────────
+
+class ListaPostres:
+    def __init__(self):
+        self.cabeza = None
+
+    def buscar(self, nombre):
+        actual = self.cabeza
+        while actual:
+            if actual.nombre == nombre.strip().lower():
+                return actual
+            actual = actual.siguiente
+        return None
+
+    def como_lista(self):
+        resultado, actual = [], self.cabeza
+        while actual:
+            resultado.append(actual.nombre)
+            actual = actual.siguiente
+        return resultado
+
+    def alta(self, nombre, ingredientes=None):
+        nuevo = NodoPostre(nombre)
+        if not self.cabeza or nuevo.nombre < self.cabeza.nombre:
+            nuevo.siguiente = self.cabeza
+            self.cabeza = nuevo
+        else:
+            actual = self.cabeza
+            while actual.siguiente and actual.siguiente.nombre < nuevo.nombre:
+                actual = actual.siguiente
+            nuevo.siguiente = actual.siguiente
+            actual.siguiente = nuevo
+        for ing in (ingredientes or []):
+            nuevo.ingredientes.agregar(ing)
+
+    def baja(self, nombre):
+        nombre = nombre.strip().lower()
+        if not self.cabeza:
+            return False
+        if self.cabeza.nombre == nombre:
+            self.cabeza = self.cabeza.siguiente
+            return True
+        actual = self.cabeza
+        while actual.siguiente:
+            if actual.siguiente.nombre == nombre:
+                actual.siguiente = actual.siguiente.siguiente
+                return True
+            actual = actual.siguiente
+        return False
+
+    def editar(self, viejo, nuevo):
+        nodo = self.buscar(viejo)
+        if not nodo:
+            return False
+        ings = nodo.ingredientes.como_lista()
+        self.baja(viejo)
+        self.alta(nuevo, ings)
+        return True
+
+    def eliminar_duplicados(self):
+        log, vistos = [], set()
+        actual, anterior = self.cabeza, None
+        while actual:
+            if actual.nombre in vistos:
+                anterior.siguiente = actual.siguiente
+                log.append(f"Postre duplicado eliminado: '{actual.nombre}'")
+                actual = anterior.siguiente
+            else:
+                vistos.add(actual.nombre)
+                vistos_ing, ing_actual, ing_ant = set(), actual.ingredientes.cabeza, None
+                while ing_actual:
+                    if ing_actual.nombre in vistos_ing:
+                        (ing_ant.siguiente if ing_ant else None) and setattr(ing_ant, 'siguiente', ing_actual.siguiente)
+                        if not ing_ant:
+                            actual.ingredientes.cabeza = ing_actual.siguiente
+                        else:
+                            ing_ant.siguiente = ing_actual.siguiente
+                        log.append(f"  Ingrediente duplicado en '{actual.nombre}': '{ing_actual.nombre}'")
+                        ing_actual = ing_ant.siguiente if ing_ant else actual.ingredientes.cabeza
+                    else:
+                        vistos_ing.add(ing_actual.nombre)
+                        ing_ant, ing_actual = ing_actual, ing_actual.siguiente
+                anterior, actual = actual, actual.siguiente
+        return log
+
+    def fusionar(self, nombre1, nombre2, nombre_final):
+        n1, n2 = self.buscar(nombre1), self.buscar(nombre2)
+        if not n1 or not n2:
+            return False
+        todos = list(dict.fromkeys(n1.ingredientes.como_lista() + n2.ingredientes.como_lista()))
+        self.baja(nombre1)
+        self.baja(nombre2)
+        self.alta(nombre_final, todos)
+        return True
+
+# ──────────────── UTILIDADES UI ────────────────
+
+def sep(titulo=""):
+    print("\n" + "═" * 50)
+    if titulo:
+        print(f"  {titulo}\n" + "═" * 50)
+
+def pausa():
+    input("\n  [Enter para continuar]")
+
+def mostrar_postres(lista):
+    actual = lista.cabeza
+    if not actual:
+        print("  (Sin postres registrados)")
+        return
+    while actual:
+        ings = actual.ingredientes.como_lista()
+        print(f"  • {actual.nombre.capitalize()} ({len(ings)} ingredientes)")
+        actual = actual.siguiente
+
+def pedir_nodo(lista, msg="Postre"):
+    nombre = input(f"  {msg}: ").strip()
+    nodo = lista.buscar(nombre)
+    if not nodo:
+        print(f"  ✗ '{nombre}' no existe. Disponibles: {', '.join(lista.como_lista()) or 'ninguno'}")
+    return nodo
+
+# ──────────────── MENÚS ────────────────────────
+
+def ver_ingredientes(lista):
+    sep("VER INGREDIENTES")
+    mostrar_postres(lista)
+    nodo = pedir_nodo(lista)
+    if nodo:
+        ings = nodo.ingredientes.como_lista()
+        print(f"\n  {nodo.nombre.capitalize()}: " + (", ".join(i.capitalize() for i in ings) or "(ninguno)"))
+    pausa()
+
+def agregar_ingrediente(lista):
+    sep("AGREGAR INGREDIENTES")
+    mostrar_postres(lista)
+    nodo = pedir_nodo(lista)
+    if not nodo:
+        pausa(); return
+    print("  Ingredientes a añadir (escribe 'fin' para terminar):")
+    while (ing := input("    > ").strip().lower()) != "fin":
+        nodo.ingredientes.agregar(ing)
+        print(f"  ✓ '{ing}' añadido.")
+    pausa()
+
+def eliminar_ingrediente(lista):
+    sep("ELIMINAR INGREDIENTE")
+    mostrar_postres(lista)
+    nodo = pedir_nodo(lista)
+    if not nodo:
+        pausa(); return
+    ings = nodo.ingredientes.como_lista()
+    print("  Ingredientes: " + (", ".join(i.capitalize() for i in ings) or "(ninguno)"))
+    ing = input("  Ingrediente a eliminar: ").strip()
+    print(f"  {'✓ Eliminado.' if nodo.ingredientes.eliminar(ing) else '✗ No encontrado.'}")
+    pausa()
+
+def alta_postre(lista):
+    sep("ALTA DE POSTRE")
+    nombre = input("  Nombre del postre: ").strip()
+    ingredientes = []
+    print("  Ingredientes (escribe 'fin' para terminar):")
+    while (ing := input("    > ").strip()) and ing.lower() != "fin":
+        ingredientes.append(ing)
+        print(f"  ✓ '{ing}' añadido.")
+    lista.alta(nombre, ingredientes)
+    print(f"  ✓ Postre '{nombre}' dado de alta con {len(ingredientes)} ingrediente(s).")
+    pausa()
+
+def baja_postre(lista):
+    sep("BAJA DE POSTRE")
+    mostrar_postres(lista)
+    nodo = pedir_nodo(lista)
+    if not nodo:
+        pausa(); return
+    print(f"  Postre: {nodo.nombre.capitalize()} | Ingredientes: {', '.join(nodo.ingredientes.como_lista()) or 'ninguno'}")
+    if input("  ¿Confirmar baja? (s/n): ").strip().lower() == "s":
+        lista.baja(nodo.nombre)
+        print("  ✓ Postre dado de baja.")
+    else:
+        print("  Cancelado.")
+    pausa()
+
+def editar(lista):
+    sep("EDITAR")
+    print("  1. Nombre de postre  2. Ingrediente")
+    op = input("  Opción: ").strip()
+    if op == "1":
+        mostrar_postres(lista)
+        viejo = input("  Postre a renombrar: ").strip()
+        nuevo = input("  Nuevo nombre: ").strip()
+        print(f"  {'✓ Renombrado.' if lista.editar(viejo, nuevo) else '✗ Postre no encontrado.'}")
+    elif op == "2":
+        mostrar_postres(lista)
+        nodo = pedir_nodo(lista)
+        if nodo:
+            print("  Ingredientes: " + ", ".join(i.capitalize() for i in nodo.ingredientes.como_lista()))
+            viejo = input("  Ingrediente a editar: ").strip()
+            nuevo = input("  Nuevo nombre: ").strip()
+            print(f"  {'✓ Editado.' if nodo.ingredientes.editar(viejo, nuevo) else '✗ Ingrediente no encontrado.'}")
+    pausa()
+
+def gestionar_duplicados(lista):
+    sep("GESTIONAR DUPLICADOS")
+    print("  1. Eliminar duplicados automáticamente")
+    print("  2. Fusionar dos postres")
+    op = input("  Opción: ").strip()
+    if op == "1":
+        log = lista.eliminar_duplicados()
+        print(f"  ✓ Sin duplicados." if not log else f"  ✓ {len(log)} cambio(s):\n" + "\n".join(f"    - {l}" for l in log))
+    elif op == "2":
+        mostrar_postres(lista)
+        p1 = input("  Primer postre: ").strip()
+        p2 = input("  Segundo postre: ").strip()
+        pf = input("  Nombre fusionado: ").strip()
+        print(f"  {'✓ Fusionados.' if lista.fusionar(p1, p2, pf) else '✗ Uno o ambos postres no existen.'}")
+    pausa()
+
+# ──────────────── MAIN ─────────────────────────
+
+def main():
+    lista = ListaPostres()
+    lista.alta("flan",       ["leche", "huevo", "azúcar", "vainilla"])
+    lista.alta("brownie",    ["chocolate", "harina", "mantequilla", "azúcar", "huevo"])
+    lista.alta("cheesecake", ["queso crema", "galleta", "mantequilla", "azúcar", "limón"])
+
+    opciones = {
+        "a": ver_ingredientes,     "b": agregar_ingrediente,
+        "c": eliminar_ingrediente, "d": alta_postre,
+        "e": baja_postre,          "f": editar,
+        "g": gestionar_duplicados,
+    }
+
+    while True:
+        sep("SISTEMA DE POSTRES")
+        mostrar_postres(lista)
+        print("""
+  a) Ver ingredientes      b) Agregar ingredientes
+  c) Eliminar ingrediente  d) Alta postre
+  e) Baja postre           f) Editar
+  g) Gestionar duplicados
+  s) Salir""")
+        op = input("\n  Opción: ").strip().lower()
+        if op == "s":
+            print("\n  ¡Hasta luego!\n"); break
+        elif op in opciones:
+            opciones[op](lista)
+        else:
+            print("  ✗ Opción inválida."); pausa()
+
+if __name__ == "__main__":
+    main()
