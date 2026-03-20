@@ -1,0 +1,528 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import random
+import time
+from collections import deque
+import threading
+from datetime import datetime
+import numpy as np
+
+
+class Tarea:
+    def __init__(self, id_tarea, prioridad, descripcion):
+        self.id = id_tarea
+        self.prioridad = prioridad
+        self.descripcion = descripcion
+        self.tiempo_ejecucion = random.uniform(0.5, 2.0)
+        self.timestamp = datetime.now().strftime("%H:%M:%S")
+        self.estado = "Pendiente"
+
+    def __str__(self):
+        return f"T{self.id:03d}"
+
+
+class SimuladorTareasProfesional:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Gestor de Tareas Enterprise - Colas Prioritarias")
+        # Pantalla completa ajustable
+        self.root.state('zoomed')  # maximizado en Windows
+        self.root.minsize(1100, 650)
+
+        self.setup_styles()
+
+        self.cola_normal      = deque()
+        self.bicola_critica   = deque()
+        self.tareas_ejecutadas = []
+        self.contador_tareas  = 0
+        self.tiempo_inicio    = None
+
+        self.ejecutando_normal  = False
+        self.ejecutando_critica = False
+        self._lock_normal     = threading.Lock()
+        self._lock_critica    = threading.Lock()
+        self._lock_ejecutadas = threading.Lock()
+
+        self.setup_ui()
+        self.actualizar_tiempo()
+
+    # ── ESTILOS ────────────────────────────────────────────────────────────
+    def setup_styles(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        self.colors = {
+            'primary':   '#2c3e50',
+            'secondary': '#34495e',
+            'accent':    '#3498db',
+            'success':   '#27ae60',
+            'warning':   '#e74c3c',
+            'info':      '#f39c12',
+            'bg':        '#ecf0f1',
+            'text':      '#2c3e50',
+            'white':     '#ffffff',
+            'released':  '#1abc9c',
+        }
+        style.configure('Title.TLabel',  font=('Segoe UI', 18, 'bold'), foreground=self.colors['primary'])
+        style.configure('Header.TLabel', font=('Segoe UI', 10, 'bold'), foreground=self.colors['secondary'])
+
+    # ── UI PRINCIPAL ───────────────────────────────────────────────────────
+    def setup_ui(self):
+        # Barra de estado abajo (primero para que quede fija)
+        self.setup_status_bar()
+
+        # Contenedor principal con padding mínimo
+        main = ttk.Frame(self.root, padding="10")
+        main.pack(fill=tk.BOTH, expand=True)
+
+        # Fila 1: Header
+        self.setup_header(main)
+
+        # Fila 2: Botones de control
+        self.setup_control_panel(main)
+
+        # Fila 3: Todo el resto en un PanedWindow vertical
+        body = ttk.Frame(main)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        # Columna izquierda: métricas + colas + log
+        left = ttk.Frame(body)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+
+        self.setup_metrics_panel(left)
+        self.setup_queues_panel(left)
+        self.setup_log_panel(left)
+
+        # Columna derecha: panel de liberadas
+        self.setup_released_panel(body)
+
+    # ── HEADER ─────────────────────────────────────────────────────────────
+    def setup_header(self, parent):
+        hf = ttk.Frame(parent)
+        hf.pack(fill=tk.X, pady=(0, 8))
+
+        tf = ttk.Frame(hf)
+        tf.pack(side=tk.LEFT)
+        ttk.Label(tf, text="GESTOR DE TAREAS ENTERPRISE", style='Title.TLabel').pack(anchor=tk.W)
+        ttk.Label(tf, text="Colas Prioritarias v2.0  |  Ejecucion SIMULTANEA",
+                  font=('Segoe UI', 9), foreground=self.colors['secondary']).pack(anchor=tk.W)
+
+        cf = ttk.Frame(hf)
+        cf.pack(side=tk.RIGHT)
+        self.time_label = ttk.Label(cf, font=('Segoe UI', 22, 'bold'), foreground=self.colors['primary'])
+        self.time_label.pack()
+        self.date_label = ttk.Label(cf, font=('Segoe UI', 9), foreground=self.colors['secondary'])
+        self.date_label.pack()
+
+    # ── PANEL DE CONTROL ───────────────────────────────────────────────────
+    def setup_control_panel(self, parent):
+        cf = ttk.LabelFrame(parent, text="Panel de Control", padding="8")
+        cf.pack(fill=tk.X, pady=(0, 8))
+
+        buttons = [
+            ("+ Tarea Normal",  self.generar_tarea_normal,  self.colors['success']),
+            ("! Tarea Critica", self.generar_tarea_critica, self.colors['warning']),
+            ("> Iniciar Ambas", self.iniciar_simulacion,    self.colors['accent']),
+            ("* Generar 15",    self.generar_15_tareas,     self.colors['info']),
+            ("~ Reiniciar",     self.limpiar_todo,          self.colors['secondary']),
+            ("X Detener Ambas", self.detener_simulacion,    self.colors['warning']),
+        ]
+
+        for text, command, color in buttons:
+            btn = tk.Button(cf, text=text, command=command,
+                            bg=color, fg='white', font=('Segoe UI', 10, 'bold'),
+                            padx=12, pady=6, relief=tk.FLAT, cursor='hand2')
+            btn.pack(side=tk.LEFT, padx=4)
+            btn.bind("<Enter>", lambda e, b=btn: b.configure(bg=self.colors['secondary']))
+            btn.bind("<Leave>", lambda e, b=btn, c=color: b.configure(bg=c))
+
+    # ── MÉTRICAS ───────────────────────────────────────────────────────────
+    def setup_metrics_panel(self, parent):
+        mf = ttk.LabelFrame(parent, text="Metricas en Tiempo Real", padding="8")
+        mf.pack(fill=tk.X, pady=(0, 8))
+
+        mg = ttk.Frame(mf)
+        mg.pack()
+
+        metrics = [
+            ("Tareas Normales", "normal_count",    self.colors['success']),
+            ("Tareas Criticas", "critical_count",  self.colors['warning']),
+            ("Completadas",     "completed_count", self.colors['accent']),
+            ("Tiempo Promedio", "avg_wait",        self.colors['info']),
+            ("Rendimiento",     "throughput",      self.colors['primary']),
+            ("Utilizacion",     "utilization",     self.colors['secondary']),
+        ]
+
+        self.metric_labels = {}
+        for i, (label, key, color) in enumerate(metrics):
+            frame = tk.Frame(mg, bg=self.colors['white'], relief=tk.RAISED, bd=1)
+            frame.grid(row=0, column=i, padx=6, pady=4, sticky="nsew")
+            ttk.Label(frame, text=label, style='Header.TLabel').pack(pady=(6, 2))
+            self.metric_labels[key] = ttk.Label(frame, text="0",
+                                                 font=('Segoe UI', 16, 'bold'),
+                                                 foreground=color)
+            self.metric_labels[key].pack(pady=(0, 6))
+
+    # ── COLAS PENDIENTES (lado a lado, altura fija) ────────────────────────
+    def setup_queues_panel(self, parent):
+        qf = ttk.Frame(parent)
+        qf.pack(fill=tk.X, pady=(0, 8))
+
+        # Cola Normal
+        nf = ttk.LabelFrame(qf, text="COLA NORMAL (FIFO)", padding="6")
+        nf.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+
+        self.estado_normal_lbl = tk.Label(nf, text="Detenida",
+                                          bg=self.colors['secondary'], fg='white',
+                                          font=('Segoe UI', 8, 'bold'), padx=5, pady=2)
+        self.estado_normal_lbl.pack(anchor=tk.NE, pady=(0, 3))
+        self.setup_queue_scroll(nf, "normal", height=120)
+
+        # Bicola Critica
+        bf = ttk.LabelFrame(qf, text="COLA CRITICA (Bicola)", padding="6")
+        bf.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.estado_critica_lbl = tk.Label(bf, text="Detenida",
+                                            bg=self.colors['secondary'], fg='white',
+                                            font=('Segoe UI', 8, 'bold'), padx=5, pady=2)
+        self.estado_critica_lbl.pack(anchor=tk.NE, pady=(0, 3))
+        self.setup_queue_scroll(bf, "critical", height=120)
+
+    def setup_queue_scroll(self, parent, queue_type, height=120):
+        canvas = tk.Canvas(parent, bg=self.colors['white'], height=height, highlightthickness=0)
+        sb     = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        inner  = ttk.Frame(canvas)
+        canvas.configure(yscrollcommand=sb.set)
+        cw = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def on_conf(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfig(cw, width=canvas.winfo_width())
+
+        inner.bind("<Configure>", on_conf)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        if queue_type == "normal":
+            self.normal_queue_frame = inner
+        else:
+            self.critical_queue_frame = inner
+
+    # ── LOG ────────────────────────────────────────────────────────────────
+    def setup_log_panel(self, parent):
+        lf = ttk.LabelFrame(parent, text="Registro de Ejecucion", padding="6")
+        lf.pack(fill=tk.X, pady=(0, 0))
+
+        tf = ttk.Frame(lf)
+        tf.pack(fill=tk.BOTH, expand=True)
+
+        self.log_text = tk.Text(tf, height=5, font=('Consolas', 8),
+                                bg=self.colors['white'], fg=self.colors['text'],
+                                wrap=tk.WORD)
+        sb = ttk.Scrollbar(tf, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=sb.set)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.log_text.tag_config("info",     foreground=self.colors['accent'])
+        self.log_text.tag_config("success",  foreground=self.colors['success'])
+        self.log_text.tag_config("warning",  foreground=self.colors['warning'])
+        self.log_text.tag_config("critical", foreground=self.colors['warning'],
+                                 font=('Consolas', 8, 'bold'))
+
+    # ── PANEL DE TAREAS LIBERADAS (columna derecha, altura total) ──────────
+    def setup_released_panel(self, parent):
+        rf = ttk.LabelFrame(parent, text="TAREAS LIBERADAS (Procesadas)", padding="6")
+        rf.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, ipadx=4)
+        rf.configure(width=480)
+        rf.pack_propagate(False)   # ancho fijo
+
+        # Encabezado de columnas
+        header = tk.Frame(rf, bg=self.colors['secondary'])
+        header.pack(fill=tk.X, pady=(0, 3))
+        for col, w in [("ID", 8), ("Tipo", 9), ("Tiempo", 8), ("Hora", 9), ("Estado", 12)]:
+            tk.Label(header, text=col, bg=self.colors['secondary'], fg='white',
+                     font=('Segoe UI', 9, 'bold'), width=w, anchor='center').pack(side=tk.LEFT, padx=1)
+
+        # Canvas con scroll que ocupa todo el espacio restante
+        canvas = tk.Canvas(rf, bg=self.colors['white'], highlightthickness=0)
+        sb = ttk.Scrollbar(rf, orient="vertical", command=canvas.yview)
+        self.released_inner = ttk.Frame(canvas)
+        canvas.configure(yscrollcommand=sb.set)
+        cw = canvas.create_window((0, 0), window=self.released_inner, anchor="nw")
+
+        def on_conf(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfig(cw, width=canvas.winfo_width())
+
+        self.released_inner.bind("<Configure>", on_conf)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(-1*(e.delta//120), "units"))
+        self._released_canvas = canvas
+
+    def agregar_fila_liberada(self, tarea):
+        es_critica = tarea.prioridad == "Critica"
+        color_bg = '#fff3f0' if es_critica else '#f0fff4'
+        color_id = self.colors['warning'] if es_critica else self.colors['success']
+        icon     = "[!]" if es_critica else "[N]"
+
+        # Desplazar filas existentes hacia abajo
+        for widget in self.released_inner.winfo_children():
+            info = widget.grid_info()
+            if info:
+                widget.grid(row=int(info['row']) + 1, column=0,
+                            sticky='ew', padx=2, pady=1)
+
+        row_frame = tk.Frame(self.released_inner, bg=color_bg)
+        row_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=1)
+        self.released_inner.columnconfigure(0, weight=1)
+
+        cols = [
+            (f"{icon} {tarea}",                8,  color_id,                'bold'),
+            (tarea.prioridad,                  9,  color_id,                'bold'),
+            (f"{tarea.tiempo_ejecucion:.2f}s", 8,  self.colors['text'],     'normal'),
+            (tarea.timestamp,                  9,  self.colors['secondary'],'normal'),
+            ("OK - Liberada",                  12, self.colors['released'], 'bold'),
+        ]
+
+        for text, w, fg, weight in cols:
+            tk.Label(row_frame, text=text, bg=color_bg, fg=fg,
+                     font=('Segoe UI', 9, weight), width=w, anchor='center').pack(side=tk.LEFT, padx=1, pady=2)
+
+        self._released_canvas.after(50, lambda: self._released_canvas.yview_moveto(0))
+
+    # ── STATUS BAR ─────────────────────────────────────────────────────────
+    def setup_status_bar(self):
+        sf = tk.Frame(self.root, bg=self.colors['secondary'], height=26)
+        sf.pack(side=tk.BOTTOM, fill=tk.X)
+        sf.pack_propagate(False)
+
+        self.status_label = tk.Label(sf, text="Sistema listo",
+                                     bg=self.colors['secondary'], fg='white',
+                                     font=('Segoe UI', 9))
+        self.status_label.pack(side=tk.LEFT, padx=10)
+
+        self.system_status = tk.Label(sf, text="EN LINEA",
+                                      bg=self.colors['secondary'], fg=self.colors['success'],
+                                      font=('Segoe UI', 9, 'bold'))
+        self.system_status.pack(side=tk.RIGHT, padx=10)
+
+    # ── RELOJ ──────────────────────────────────────────────────────────────
+    def actualizar_tiempo(self):
+        now = datetime.now()
+        self.time_label.config(text=now.strftime("%H:%M:%S"))
+        self.date_label.config(text=now.strftime("%A, %d de %B de %Y"))
+        self.root.after(1000, self.actualizar_tiempo)
+
+    # ── GENERACIÓN DE TAREAS ──────────────────────────────────────────────
+    def generar_tarea_normal(self):
+        self.contador_tareas += 1
+        t = Tarea(self.contador_tareas, "Normal", f"Tarea Estandar #{self.contador_tareas}")
+        with self._lock_normal:
+            self.cola_normal.append(t)
+        self.actualizar_interfaz()
+        self.agregar_log(f"Tarea normal {t} agregada", "info")
+
+    def generar_tarea_critica(self):
+        self.contador_tareas += 1
+        t = Tarea(self.contador_tareas, "Critica", f"Tarea Critica #{self.contador_tareas}")
+        with self._lock_critica:
+            self.bicola_critica.appendleft(t)
+        self.actualizar_interfaz()
+        self.agregar_log(f"Tarea CRITICA {t} agregada al frente", "critical")
+
+    def generar_15_tareas(self):
+        for _ in range(15):
+            self.contador_tareas += 1
+            if random.random() < 0.3:
+                t = Tarea(self.contador_tareas, "Critica", f"Tarea Critica #{self.contador_tareas}")
+                with self._lock_critica:
+                    self.bicola_critica.appendleft(t)
+            else:
+                t = Tarea(self.contador_tareas, "Normal", f"Tarea Estandar #{self.contador_tareas}")
+                with self._lock_normal:
+                    self.cola_normal.append(t)
+        self.actualizar_interfaz()
+        self.agregar_log("15 tareas generadas automaticamente", "success")
+
+    # ── SIMULACIÓN SIMULTÁNEA ─────────────────────────────────────────────
+    def iniciar_simulacion(self):
+        if self.ejecutando_normal and self.ejecutando_critica:
+            self.agregar_log("La simulacion ya esta en marcha", "warning")
+            return
+        if not self.cola_normal and not self.bicola_critica:
+            self.agregar_log("No hay tareas para ejecutar", "warning")
+            return
+
+        self.tiempo_inicio = time.time()
+        self.system_status.config(text="EJECUTANDO", fg=self.colors['info'])
+        self.agregar_log("Simulacion iniciada - ambas colas en PARALELO", "info")
+
+        if self.cola_normal and not self.ejecutando_normal:
+            self.ejecutando_normal = True
+            self._set_estado_normal("Ejecutando")
+            threading.Thread(target=self._worker_normal, daemon=True).start()
+
+        if self.bicola_critica and not self.ejecutando_critica:
+            self.ejecutando_critica = True
+            self._set_estado_critica("Ejecutando")
+            threading.Thread(target=self._worker_critica, daemon=True).start()
+
+    def _worker_normal(self):
+        while self.ejecutando_normal:
+            with self._lock_normal:
+                tarea = self.cola_normal.popleft() if self.cola_normal else None
+            if tarea:
+                self.root.after(0, lambda t=tarea: self._ejecutar_tarea(t, "normal"))
+                time.sleep(tarea.tiempo_ejecucion)
+            else:
+                break
+        self.ejecutando_normal = False
+        self.root.after(0, lambda: self._set_estado_normal("Detenida"))
+        self.root.after(0, self._verificar_fin)
+
+    def _worker_critica(self):
+        while self.ejecutando_critica:
+            with self._lock_critica:
+                tarea = self.bicola_critica.popleft() if self.bicola_critica else None
+            if tarea:
+                self.root.after(0, lambda t=tarea: self._ejecutar_tarea(t, "critical"))
+                time.sleep(tarea.tiempo_ejecucion)
+            else:
+                break
+        self.ejecutando_critica = False
+        self.root.after(0, lambda: self._set_estado_critica("Detenida"))
+        self.root.after(0, self._verificar_fin)
+
+    def _ejecutar_tarea(self, tarea, tipo):
+        tarea.estado = "Completada"
+        with self._lock_ejecutadas:
+            self.tareas_ejecutadas.append(tarea)
+        self.agregar_fila_liberada(tarea)
+        if tipo == "critical":
+            self.agregar_log(f"LIBERADA Critica: {tarea} | {tarea.tiempo_ejecucion:.2f}s", "critical")
+        else:
+            self.agregar_log(f"LIBERADA  Normal: {tarea} | {tarea.tiempo_ejecucion:.2f}s", "success")
+        self.actualizar_interfaz()
+
+    def _verificar_fin(self):
+        if not self.ejecutando_normal and not self.ejecutando_critica:
+            t = time.time() - self.tiempo_inicio if self.tiempo_inicio else 0
+            self.system_status.config(text="EN LINEA", fg=self.colors['success'])
+            self.agregar_log(f"Ambas colas finalizadas - Tiempo total: {t:.2f}s", "success")
+
+    # ── CONTROLES ─────────────────────────────────────────────────────────
+    def detener_simulacion(self):
+        self.ejecutando_normal  = False
+        self.ejecutando_critica = False
+        self._set_estado_normal("Detenida")
+        self._set_estado_critica("Detenida")
+        self.system_status.config(text="DETENIDO", fg=self.colors['warning'])
+        self.agregar_log("Simulacion detenida por el usuario", "warning")
+
+    def limpiar_todo(self):
+        self.ejecutando_normal  = False
+        self.ejecutando_critica = False
+        with self._lock_normal:
+            self.cola_normal.clear()
+        with self._lock_critica:
+            self.bicola_critica.clear()
+        with self._lock_ejecutadas:
+            self.tareas_ejecutadas.clear()
+        self.contador_tareas = 0
+        for w in self.released_inner.winfo_children():
+            w.destroy()
+        self.system_status.config(text="EN LINEA", fg=self.colors['success'])
+        self._set_estado_normal("Detenida")
+        self._set_estado_critica("Detenida")
+        self.actualizar_interfaz()
+        self.log_text.delete(1.0, tk.END)
+        self.agregar_log("Sistema reiniciado correctamente", "info")
+
+    def _set_estado_normal(self, texto):
+        color = self.colors['success'] if "Ejecutando" in texto else self.colors['secondary']
+        self.estado_normal_lbl.config(text=texto, bg=color)
+
+    def _set_estado_critica(self, texto):
+        color = self.colors['warning'] if "Ejecutando" in texto else self.colors['secondary']
+        self.estado_critica_lbl.config(text=texto, bg=color)
+
+    # ── ACTUALIZAR INTERFAZ ────────────────────────────────────────────────
+    def actualizar_interfaz(self):
+        self.actualizar_colas()
+        self.actualizar_metricas()
+
+    def actualizar_colas(self):
+        for w in self.normal_queue_frame.winfo_children():
+            w.destroy()
+        for w in self.critical_queue_frame.winfo_children():
+            w.destroy()
+        with self._lock_normal:
+            snap_n = list(self.cola_normal)
+        with self._lock_critica:
+            snap_c = list(self.bicola_critica)
+        for t in snap_n:
+            self._tarea_widget(self.normal_queue_frame, t, "normal")
+        for t in snap_c:
+            self._tarea_widget(self.critical_queue_frame, t, "critical")
+
+    def _tarea_widget(self, parent, tarea, tipo):
+        color = self.colors['warning'] if tipo == "critical" else self.colors['success']
+        icon  = "[!]" if tipo == "critical" else "[N]"
+        f = tk.Frame(parent, bg=self.colors['white'], relief=tk.RAISED, bd=1, padx=8, pady=3)
+        f.pack(fill=tk.X, pady=1)
+        tk.Label(f, text=f"{icon} {tarea}", bg=self.colors['white'],
+                 fg=color, font=('Segoe UI', 9, 'bold')).pack(side=tk.LEFT)
+        tk.Label(f, text=f"[{tarea.tiempo_ejecucion:.1f}s]",
+                 bg=self.colors['white'], fg=self.colors['secondary'],
+                 font=('Segoe UI', 8)).pack(side=tk.RIGHT)
+
+    def actualizar_metricas(self):
+        with self._lock_normal:
+            n_n = len(self.cola_normal)
+        with self._lock_critica:
+            n_c = len(self.bicola_critica)
+        with self._lock_ejecutadas:
+            n_e     = len(self.tareas_ejecutadas)
+            tiempos = [t.tiempo_ejecucion for t in self.tareas_ejecutadas]
+
+        self.metric_labels['normal_count'].config(text=str(n_n))
+        self.metric_labels['critical_count'].config(text=str(n_c))
+        self.metric_labels['completed_count'].config(text=str(n_e))
+
+        if tiempos:
+            self.metric_labels['avg_wait'].config(text=f"{np.mean(tiempos):.2f}s")
+
+        if self.tiempo_inicio and (self.ejecutando_normal or self.ejecutando_critica):
+            elapsed = time.time() - self.tiempo_inicio
+            if elapsed > 0:
+                self.metric_labels['throughput'].config(text=f"{n_e/elapsed:.2f}/s")
+
+        total = n_e + n_n + n_c
+        if total > 0:
+            self.metric_labels['utilization'].config(text=f"{(n_e/total)*100:.1f}%")
+
+    def agregar_log(self, mensaje, tipo="info"):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self.log_text.insert(tk.END, f"[{ts}] {mensaje}\n", tipo)
+        self.log_text.see(tk.END)
+        self.status_label.config(text=mensaje)
+
+
+# ── ENTRY POINT ───────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    root = tk.Tk()
+    try:
+        root.iconbitmap(default='icon.ico')
+    except:
+        pass
+
+    app = SimuladorTareasProfesional(root)
+
+    def on_closing():
+        if messagebox.askokcancel("Salir", "Desea salir del Gestor de Tareas?"):
+            app.detener_simulacion()
+            root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    root.mainloop()
