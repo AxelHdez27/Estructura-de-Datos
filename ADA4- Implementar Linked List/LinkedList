@@ -1,0 +1,768 @@
+"""
+╔══════════════════════════════════════════════════════════════╗
+║              MyLinkedList — Implementación Completa          ║
+║         Todos los conceptos de una Lista Enlazada            ║
+╚══════════════════════════════════════════════════════════════╝
+
+Conceptos implementados:
+  - Nodo simple (Node) y Nodo doble (DNode)
+  - Lista Enlazada Simple  (SinglyLinkedList)
+  - Lista Enlazada Doble   (DoublyLinkedList)
+  - Lista Enlazada Circular(CircularLinkedList)
+  - Iteradores (__iter__, __next__, __reversed__)
+  - Dunder: __len__, __getitem__, __contains__, __repr__
+  - Traversal, búsqueda lineal, inserción, eliminación
+  - Inversión in-place, nodo del medio (dos punteros)
+  - Detección de ciclos — Algoritmo de Floyd
+  - Merge Sort sobre lista enlazada  O(n log n)
+  - Eliminación de duplicados        O(n)
+  - Intersección de dos listas       O(n+m)
+  - Problema de Josephus (circular)
+"""
+
+from __future__ import annotations
+from typing import Any, Optional, Iterator
+
+
+# ══════════════════════════════════════════════════════════════
+# 1. NODO SIMPLE
+# ══════════════════════════════════════════════════════════════
+
+class Node:
+    """
+    Bloque fundamental de cualquier lista enlazada simple.
+    Guarda un dato (data) y un puntero al siguiente nodo (next).
+    """
+
+    def __init__(self, data: Any):
+        self.data: Any            = data
+        self.next: Optional[Node] = None
+
+    def __repr__(self) -> str:
+        return f"Node({self.data!r})"
+
+
+# ══════════════════════════════════════════════════════════════
+# 2. NODO DOBLE
+# ══════════════════════════════════════════════════════════════
+
+class DNode:
+    """
+    Nodo con punteros en ambas direcciones: prev y next.
+    Permite recorrer la lista hacia adelante y hacia atrás.
+    """
+
+    def __init__(self, data: Any):
+        self.data: Any             = data
+        self.next: Optional[DNode] = None
+        self.prev: Optional[DNode] = None
+
+    def __repr__(self) -> str:
+        return f"DNode({self.data!r})"
+
+
+# ══════════════════════════════════════════════════════════════
+# 3. LISTA ENLAZADA SIMPLE
+# ══════════════════════════════════════════════════════════════
+
+class SinglyLinkedList:
+    """
+    Lista enlazada simple: cada nodo apunta solo al siguiente.
+
+    Estructura visual:
+        head → [A] → [B] → [C] → None
+
+    Complejidades:
+        - Acceso/búsqueda: O(n)
+        - Inserción al inicio (prepend): O(1)
+        - Inserción al final  (append):  O(n)
+        - Eliminación:                   O(n)
+        - Espacio:                       O(n)
+    """
+
+    def __init__(self):
+        self.head: Optional[Node] = None
+        self._size: int = 0
+
+    # ── Propiedades ─────────────────────────────────────────
+
+    def __len__(self) -> int:
+        """Devuelve el número de nodos. O(1)."""
+        return self._size
+
+    def is_empty(self) -> bool:
+        return self.head is None
+
+    # ── Iteración ───────────────────────────────────────────
+
+    def __iter__(self) -> Iterator[Any]:
+        """Permite: for x in lista"""
+        current = self.head
+        while current:
+            yield current.data
+            current = current.next
+
+    def __contains__(self, data: Any) -> bool:
+        """Permite: x in lista"""
+        return self.search(data) != -1
+
+    def __getitem__(self, index: int) -> Any:
+        """Permite acceso por índice: lista[2], lista[-1]"""
+        if index < 0:
+            index += self._size
+        if not (0 <= index < self._size):
+            raise IndexError(f"Índice {index} fuera de rango (size={self._size})")
+        current = self.head
+        for _ in range(index):
+            current = current.next
+        return current.data
+
+    def __repr__(self) -> str:
+        if self.is_empty():
+            return "head → None"
+        return "head → " + " → ".join(str(x) for x in self) + " → None"
+
+    # ── Inserción ───────────────────────────────────────────
+
+    def append(self, data: Any) -> None:
+        """
+        Inserta al FINAL. O(n).
+        Recorre hasta el último nodo y encadena el nuevo.
+
+        Antes:  head → A → B → None
+        Después: head → A → B → [nuevo] → None
+        """
+        new_node = Node(data)
+        if self.is_empty():
+            self.head = new_node
+        else:
+            current = self.head
+            while current.next:
+                current = current.next
+            current.next = new_node
+        self._size += 1
+
+    def prepend(self, data: Any) -> None:
+        """
+        Inserta al INICIO. O(1).
+        El nuevo nodo apunta al antiguo head y pasa a ser el nuevo head.
+
+        Antes:  head → A → B → None
+        Después: head → [nuevo] → A → B → None
+        """
+        new_node = Node(data)
+        new_node.next = self.head
+        self.head = new_node
+        self._size += 1
+
+    def insert_at(self, index: int, data: Any) -> None:
+        """
+        Inserta en posición arbitraria. O(n).
+        Redirige a prepend/append si el índice está en los extremos.
+        """
+        if index <= 0:
+            self.prepend(data)
+            return
+        if index >= self._size:
+            self.append(data)
+            return
+        new_node = Node(data)
+        current = self.head
+        for _ in range(index - 1):
+            current = current.next
+        new_node.next = current.next
+        current.next = new_node
+        self._size += 1
+
+    # ── Eliminación ─────────────────────────────────────────
+
+    def remove(self, data: Any) -> bool:
+        """
+        Elimina la PRIMERA aparición del valor. O(n).
+        Devuelve True si encontró y eliminó, False si no existe.
+        """
+        if self.is_empty():
+            return False
+        if self.head.data == data:
+            self.head = self.head.next
+            self._size -= 1
+            return True
+        current = self.head
+        while current.next:
+            if current.next.data == data:
+                current.next = current.next.next
+                self._size -= 1
+                return True
+            current = current.next
+        return False
+
+    def remove_at(self, index: int) -> Any:
+        """
+        Elimina el nodo en la posición dada y devuelve su dato. O(n).
+        """
+        if not (0 <= index < self._size):
+            raise IndexError(f"Índice {index} fuera de rango")
+        if index == 0:
+            data = self.head.data
+            self.head = self.head.next
+            self._size -= 1
+            return data
+        current = self.head
+        for _ in range(index - 1):
+            current = current.next
+        data = current.next.data
+        current.next = current.next.next
+        self._size -= 1
+        return data
+
+    # ── Búsqueda ────────────────────────────────────────────
+
+    def search(self, data: Any) -> int:
+        """
+        Búsqueda lineal. O(n).
+        Devuelve el índice (0-based) o -1 si no existe.
+        """
+        current, idx = self.head, 0
+        while current:
+            if current.data == data:
+                return idx
+            current = current.next
+            idx += 1
+        return -1
+
+    def get(self, index: int) -> Any:
+        """Acceso explícito por índice (alias de __getitem__)."""
+        return self[index]
+
+    def find_middle(self) -> Any:
+        """
+        Encuentra el dato del nodo MEDIO. O(n), O(1) espacio.
+
+        Técnica de dos punteros (lento y rápido):
+          - El puntero rápido avanza 2 nodos por cada 1 del lento.
+          - Cuando el rápido llega al final, el lento está en el medio.
+        """
+        if self.is_empty():
+            return None
+        slow = fast = self.head
+        while fast and fast.next:
+            slow = slow.next
+            fast = fast.next.next
+        return slow.data
+
+    # ── Inversión in-place ───────────────────────────────────
+
+    def reverse(self) -> None:
+        """
+        Invierte la lista EN SU LUGAR. O(n), O(1) espacio.
+
+        Usa tres punteros: prev, current, nxt.
+
+        Paso a paso:
+            prev=None  current=A → B → C
+            iter 1:    A.next = None;  prev=A;  current=B
+            iter 2:    B.next = A;     prev=B;  current=C
+            iter 3:    C.next = B;     prev=C;  current=None
+            head = C → B → A → None
+        """
+        prev, current = None, self.head
+        while current:
+            nxt          = current.next   # guarda el siguiente
+            current.next = prev           # invierte el puntero
+            prev         = current        # avanza prev
+            current      = nxt            # avanza current
+        self.head = prev
+
+    # ── Detección de ciclo — Algoritmo de Floyd ──────────────
+
+    def has_cycle(self) -> bool:
+        """
+        Detecta si la lista tiene un ciclo. O(n), O(1) espacio.
+
+        Algoritmo de la Tortuga y la Liebre (Floyd):
+          - Tortuga (slow) avanza 1 nodo por paso.
+          - Liebre  (fast) avanza 2 nodos por paso.
+          - Si hay ciclo, se encontrarán en algún punto.
+          - Si no hay ciclo, fast llegará a None.
+        """
+        slow = fast = self.head
+        while fast and fast.next:
+            slow = slow.next
+            fast = fast.next.next
+            if slow is fast:
+                return True
+        return False
+
+    # ── Merge Sort ───────────────────────────────────────────
+
+    def merge_sort(self) -> None:
+        """
+        Ordena la lista usando Merge Sort. O(n log n), O(log n) pila.
+
+        Estrategia divide y vencerás:
+          1. Encuentra el nodo del medio y parte la lista en dos mitades.
+          2. Ordena recursivamente cada mitad.
+          3. Fusiona (merge) las dos mitades ordenadas.
+        """
+        self.head = self._merge_sort(self.head)
+
+    def _merge_sort(self, head: Optional[Node]) -> Optional[Node]:
+        if head is None or head.next is None:
+            return head
+        mid = self._get_middle_node(head)
+        second = mid.next
+        mid.next = None                       # divide la lista
+        left  = self._merge_sort(head)
+        right = self._merge_sort(second)
+        return self._merge(left, right)
+
+    def _get_middle_node(self, head: Node) -> Node:
+        slow, fast = head, head
+        while fast.next and fast.next.next:
+            slow = slow.next
+            fast = fast.next.next
+        return slow
+
+    def _merge(self, l1: Optional[Node], l2: Optional[Node]) -> Optional[Node]:
+        dummy = Node(None)
+        curr  = dummy
+        while l1 and l2:
+            if l1.data <= l2.data:
+                curr.next, l1 = l1, l1.next
+            else:
+                curr.next, l2 = l2, l2.next
+            curr = curr.next
+        curr.next = l1 or l2
+        return dummy.next
+
+    # ── Eliminación de duplicados ────────────────────────────
+
+    def remove_duplicates(self) -> None:
+        """
+        Elimina valores repetidos. O(n) usando un set auxiliar.
+        La primera aparición de cada valor se conserva.
+        """
+        if self.is_empty():
+            return
+        seen = {self.head.data}
+        current = self.head
+        while current.next:
+            if current.next.data in seen:
+                current.next = current.next.next
+                self._size -= 1
+            else:
+                seen.add(current.next.data)
+                current = current.next
+
+    # ── Intersección de dos listas ───────────────────────────
+
+    @staticmethod
+    def get_intersection(
+        a: "SinglyLinkedList", b: "SinglyLinkedList"
+    ) -> Optional[Any]:
+        """
+        Encuentra el dato del primer nodo compartido entre dos listas. O(n+m).
+
+        Técnica:
+          1. Calcula las longitudes de ambas listas.
+          2. Avanza el puntero de la lista más larga en (len_a - len_b) pasos.
+          3. Avanza ambos en paralelo hasta que apunten al mismo nodo (is).
+        """
+        def tail_and_len(ll):
+            if ll.is_empty():
+                return None, 0
+            curr, n = ll.head, 1
+            while curr.next:
+                curr = curr.next
+                n += 1
+            return curr, n
+
+        tail_a, len_a = tail_and_len(a)
+        tail_b, len_b = tail_and_len(b)
+        if tail_a is not tail_b:
+            return None                       # colas distintas → no hay intersección
+        p = a.head if len_a >= len_b else b.head
+        q = b.head if len_a >= len_b else a.head
+        for _ in range(abs(len_a - len_b)):
+            p = p.next
+        while p is not q:
+            p = p.next
+            q = q.next
+        return p.data if p else None
+
+    # ── Utilidades ──────────────────────────────────────────
+
+    def to_list(self) -> list:
+        """Convierte a list de Python. O(n)."""
+        return list(self)
+
+    @classmethod
+    def from_list(cls, items: list) -> "SinglyLinkedList":
+        """Crea una SinglyLinkedList a partir de una list de Python."""
+        ll = cls()
+        for item in items:
+            ll.append(item)
+        return ll
+
+    def copy(self) -> "SinglyLinkedList":
+        """Devuelve una copia independiente de la lista."""
+        return SinglyLinkedList.from_list(self.to_list())
+
+    def count(self, data: Any) -> int:
+        """Cuenta cuántas veces aparece un valor. O(n)."""
+        return sum(1 for x in self if x == data)
+
+
+# ══════════════════════════════════════════════════════════════
+# 4. LISTA ENLAZADA DOBLE
+# ══════════════════════════════════════════════════════════════
+
+class DoublyLinkedList:
+    """
+    Lista enlazada doble: cada nodo conoce al anterior y al siguiente.
+
+    Estructura:
+        None ← [A] ⇌ [B] ⇌ [C] → None
+        head ↑                 ↑ tail
+
+    Ventajas frente a la simple:
+      - Eliminación de un nodo conocido: O(1)  (no necesita buscar el anterior)
+      - pop_back en O(1)  (sin recorrer hasta el final)
+      - Recorrido bidireccional
+    """
+
+    def __init__(self):
+        self.head: Optional[DNode] = None
+        self.tail: Optional[DNode] = None
+        self._size: int = 0
+
+    def __len__(self) -> int:
+        return self._size
+
+    def is_empty(self) -> bool:
+        return self.head is None
+
+    def __iter__(self) -> Iterator[Any]:
+        current = self.head
+        while current:
+            yield current.data
+            current = current.next
+
+    def __reversed__(self) -> Iterator[Any]:
+        """Permite: for x in reversed(lista)"""
+        current = self.tail
+        while current:
+            yield current.data
+            current = current.prev
+
+    def __repr__(self) -> str:
+        if self.is_empty():
+            return "None ⇌ None"
+        return "None ← " + " ⇌ ".join(str(x) for x in self) + " → None"
+
+    # ── Inserción ───────────────────────────────────────────
+
+    def append(self, data: Any) -> None:
+        """Inserta al FINAL. O(1) gracias al puntero tail."""
+        new_node = DNode(data)
+        if self.is_empty():
+            self.head = self.tail = new_node
+        else:
+            new_node.prev  = self.tail
+            self.tail.next = new_node
+            self.tail      = new_node
+        self._size += 1
+
+    def prepend(self, data: Any) -> None:
+        """Inserta al INICIO. O(1)."""
+        new_node = DNode(data)
+        if self.is_empty():
+            self.head = self.tail = new_node
+        else:
+            new_node.next  = self.head
+            self.head.prev = new_node
+            self.head      = new_node
+        self._size += 1
+
+    def insert_after(self, target_data: Any, data: Any) -> bool:
+        """
+        Inserta un nuevo nodo justo después del nodo con target_data. O(n).
+        Devuelve True si insertó, False si no encontró target_data.
+        """
+        current = self.head
+        while current:
+            if current.data == target_data:
+                new_node       = DNode(data)
+                new_node.next  = current.next
+                new_node.prev  = current
+                if current.next:
+                    current.next.prev = new_node
+                else:
+                    self.tail = new_node
+                current.next   = new_node
+                self._size += 1
+                return True
+            current = current.next
+        return False
+
+    # ── Eliminación ─────────────────────────────────────────
+
+    def remove(self, data: Any) -> bool:
+        """Elimina la primera aparición. O(n)."""
+        current = self.head
+        while current:
+            if current.data == data:
+                self._unlink(current)
+                return True
+            current = current.next
+        return False
+
+    def _unlink(self, node: DNode) -> None:
+        """
+        Desconecta un nodo YA CONOCIDO de la lista. O(1).
+        Es la gran ventaja de la lista doble: no necesitamos buscar el anterior.
+        """
+        if node.prev:
+            node.prev.next = node.next
+        else:
+            self.head = node.next
+        if node.next:
+            node.next.prev = node.prev
+        else:
+            self.tail = node.prev
+        node.prev = node.next = None
+        self._size -= 1
+
+    def pop_front(self) -> Any:
+        """Elimina y devuelve el primer elemento. O(1)."""
+        if self.is_empty():
+            raise IndexError("Lista vacía")
+        data = self.head.data
+        self._unlink(self.head)
+        return data
+
+    def pop_back(self) -> Any:
+        """Elimina y devuelve el último elemento. O(1)."""
+        if self.is_empty():
+            raise IndexError("Lista vacía")
+        data = self.tail.data
+        self._unlink(self.tail)
+        return data
+
+    def to_list(self) -> list:
+        return list(self)
+
+    def to_list_reversed(self) -> list:
+        return list(reversed(self))
+
+
+# ══════════════════════════════════════════════════════════════
+# 5. LISTA ENLAZADA CIRCULAR
+# ══════════════════════════════════════════════════════════════
+
+class CircularLinkedList:
+    """
+    Lista enlazada circular: el último nodo apunta de vuelta al head.
+
+    Estructura:
+        head → [A] → [B] → [C] ──┐
+                 └────────────────┘
+
+    Casos de uso: round-robin, buffers circulares, problema de Josephus.
+
+    Invariante: si la lista no está vacía, tail.next es siempre head.
+    """
+
+    def __init__(self):
+        self.head: Optional[Node] = None
+        self._size: int = 0
+
+    def __len__(self) -> int:
+        return self._size
+
+    def is_empty(self) -> bool:
+        return self.head is None
+
+    def __iter__(self) -> Iterator[Any]:
+        """Itera exactamente _size veces para no caer en bucle infinito."""
+        if self.is_empty():
+            return
+        current = self.head
+        for _ in range(self._size):
+            yield current.data
+            current = current.next
+
+    def __repr__(self) -> str:
+        if self.is_empty():
+            return "[] (circular vacía)"
+        items = list(self)
+        return " → ".join(str(x) for x in items) + f" ↺ (vuelve a {items[0]})"
+
+    def append(self, data: Any) -> None:
+        """
+        Inserta al final manteniendo el enlace circular. O(n).
+        El nuevo nodo pasa a ser la cola y apunta de vuelta al head.
+        """
+        new_node = Node(data)
+        if self.is_empty():
+            self.head = new_node
+            new_node.next = self.head
+        else:
+            current = self.head
+            while current.next is not self.head:
+                current = current.next
+            current.next  = new_node
+            new_node.next = self.head
+        self._size += 1
+
+    def prepend(self, data: Any) -> None:
+        """Inserta al inicio. O(n) para mantener la circularidad."""
+        new_node = Node(data)
+        if self.is_empty():
+            self.head = new_node
+            new_node.next = self.head
+        else:
+            current = self.head
+            while current.next is not self.head:
+                current = current.next
+            new_node.next = self.head
+            current.next  = new_node
+            self.head     = new_node
+        self._size += 1
+
+    def remove(self, data: Any) -> bool:
+        """
+        Elimina la primera aparición manteniendo la circularidad. O(n).
+        Caso especial: si solo queda un nodo, head = None.
+        """
+        if self.is_empty():
+            return False
+        if self.head.data == data:
+            if self._size == 1:
+                self.head = None
+            else:
+                current = self.head
+                while current.next is not self.head:
+                    current = current.next
+                current.next = self.head.next
+                self.head    = self.head.next
+            self._size -= 1
+            return True
+        current = self.head
+        while current.next is not self.head:
+            if current.next.data == data:
+                current.next = current.next.next
+                self._size -= 1
+                return True
+            current = current.next
+        return False
+
+    def josephus(self, k: int) -> Any:
+        """
+        Problema de Josephus: n personas en círculo, se elimina cada k-ésima.
+        Devuelve el dato del último superviviente. O(n·k).
+
+        Algoritmo:
+          - Avanza k-1 pasos desde la posición actual.
+          - Elimina ese nodo.
+          - Repite hasta que quede uno solo.
+        """
+        if self.is_empty():
+            return None
+        current = self.head
+        while self._size > 1:
+            for _ in range(k - 1):
+                current = current.next
+            next_survivor = current.next
+            self.remove(current.data)
+            current = next_survivor
+        return self.head.data if self.head else None
+
+    def to_list(self) -> list:
+        return list(self)
+
+
+# ══════════════════════════════════════════════════════════════
+# 6. DEMOSTRACIÓN COMPLETA
+# ══════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+
+    sep = lambda t: print(f"\n{'═'*60}\n  {t}\n{'═'*60}")
+
+    # ── Lista Simple ──────────────────────────────────────────
+    sep("LISTA ENLAZADA SIMPLE")
+
+    ll = SinglyLinkedList.from_list([3, 1, 4, 1, 5, 9, 2, 6])
+    print("Creada desde lista: ", ll)
+    print("Tamaño:             ", len(ll))
+    print("5 in lista:         ", 5 in ll)
+    print("Búsqueda de 9:      ", ll.search(9), "(índice)")
+    print("Elemento [3]:       ", ll[3])
+    print("Elemento [-1]:      ", ll[-1])
+    print("Nodo del medio:     ", ll.find_middle())
+
+    ll.append(99)
+    ll.prepend(0)
+    ll.insert_at(3, 77)
+    print("\nTras append(99), prepend(0), insert_at(3, 77):")
+    print(" ", ll)
+
+    ll.remove(1)        # elimina primer '1'
+    ll.remove_at(0)     # elimina head (0)
+    print("\nTras remove(1) y remove_at(0):")
+    print(" ", ll)
+
+    print("\nIteración for-in: ", [x for x in ll])
+    print("Conteo de 1:      ", ll.count(1))
+
+    copia = ll.copy()
+    copia.reverse()
+    print("\nCopia invertida:  ", copia)
+
+    ll3 = SinglyLinkedList.from_list([5, 3, 8, 1, 9, 2, 7])
+    ll3.merge_sort()
+    print("\nMerge Sort [5,3,8,1,9,2,7] →", ll3)
+
+    ll4 = SinglyLinkedList.from_list([1, 2, 3, 2, 1, 4, 3])
+    ll4.remove_duplicates()
+    print("\nElim. duplicados [1,2,3,2,1,4,3] →", ll4)
+
+    print("\n¿Tiene ciclo?:     ", ll.has_cycle())
+
+    # ── Lista Doble ───────────────────────────────────────────
+    sep("LISTA ENLAZADA DOBLE")
+
+    dl = DoublyLinkedList()
+    for v in [10, 20, 30, 40, 50]:
+        dl.append(v)
+    print("Lista:             ", dl)
+    print("Reversa:           ", list(reversed(dl)))
+
+    dl.prepend(5)
+    dl.insert_after(30, 35)
+    print("\nTras prepend(5) e insert_after(30, 35):")
+    print(" ", dl)
+
+    print("\npop_front() →", dl.pop_front())
+    print("pop_back()  →", dl.pop_back())
+    print("Lista final: ", dl)
+
+    # ── Lista Circular ────────────────────────────────────────
+    sep("LISTA ENLAZADA CIRCULAR")
+
+    cl = CircularLinkedList()
+    for v in ["X", "Y", "Z", "W", "V"]:
+        cl.append(v)
+    print("Circular:          ", cl)
+    print("Como list Python:  ", cl.to_list())
+
+    cl.remove("Z")
+    cl.prepend("A")
+    print("\nTras remove('Z') y prepend('A'):")
+    print(" ", cl)
+
+    cl2 = CircularLinkedList()
+    for i in range(1, 8):
+        cl2.append(i)
+    print(f"\nJosephus (n=7, k=3): superviviente = {cl2.josephus(k=3)}")
