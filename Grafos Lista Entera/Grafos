@@ -1,0 +1,1005 @@
+"""
+Editor de Grafos con Interfaz Gráfica — PyQt5
+Implementa el TAD Grafo completo con visualización interactiva.
+
+Instalar dependencia:
+    pip install PyQt5
+
+Ejecutar:
+    python3 grafo_gui.py
+"""
+
+import sys
+import math
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QSplitter, QLabel, QPushButton, QLineEdit, QCheckBox, QGroupBox,
+    QTabWidget, QTextEdit, QFormLayout, QSpinBox, QComboBox,
+    QFrame, QScrollArea, QSizePolicy, QDialog, QDialogButtonBox,
+    QMessageBox, QToolBar, QAction, QStatusBar
+)
+from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal, QTimer
+from PyQt5.QtGui import (
+    QPainter, QPen, QBrush, QColor, QFont, QPainterPath,
+    QPolygonF, QLinearGradient, QPalette, QIcon, QCursor
+)
+
+# ══════════════════════════════════════════════════════════
+#  TAD GRAFO
+# ══════════════════════════════════════════════════════════
+class Vertice:
+    def __init__(self, indice, objeto=None):
+        self.indice = indice
+        self.objeto = objeto
+
+class Arista:
+    def __init__(self, indice, origen, destino, objeto=None, dirigida=False):
+        self.indice  = indice
+        self._origen  = origen
+        self._destino = destino
+        self.objeto  = objeto
+        self.dirigida = dirigida
+
+class Grafo:
+    def __init__(self):
+        self._vertices   = {}
+        self._aristas    = {}
+        self._adyacencia = {}
+        self._cv = 0
+        self._ca = 0
+
+    # ── Consultas básicas ──
+    def numVertices(self):  return len(self._vertices)
+    def numAristas(self):   return len(self._aristas)
+    def vertices(self):     return list(self._vertices.keys())
+    def aristas(self):      return list(self._aristas.keys())
+
+    def grado(self, v):
+        self._vv(v); return len(self._adyacencia[v])
+
+    def verticesAdyacentes(self, v):
+        self._vv(v)
+        s = set()
+        for a in self._adyacencia[v]:
+            s.add(a._destino.indice if a._origen.indice == v else a._origen.indice)
+        return list(s)
+
+    def aristasIncidentes(self, v):
+        self._vv(v); return [a.indice for a in self._adyacencia[v]]
+
+    def verticesFinales(self, e):
+        self._ve(e); a = self._aristas[e]; return [a._origen.indice, a._destino.indice]
+
+    def opuesto(self, v, e):
+        self._vv(v); self._ve(e); a = self._aristas[e]
+        if a._origen.indice == v:   return a._destino.indice
+        if a._destino.indice == v:  return a._origen.indice
+        raise ValueError(f"V{v} no es extremo de E{e}")
+
+    def esAdyacente(self, v, w):
+        self._vv(v); self._vv(w)
+        return any(a._origen.indice == w or a._destino.indice == w for a in self._adyacencia[v])
+
+    # ── Dirigidas ──
+    def aristasDirigidas(self):   return [i for i,a in self._aristas.items() if a.dirigida]
+    def aristasNoDirigidas(self): return [i for i,a in self._aristas.items() if not a.dirigida]
+
+    def gradoEnt(self, v):
+        self._vv(v); return len(self.aristasIncidentesEnt(v))
+    def gradoSalida(self, v):
+        self._vv(v); return len(self.aristasIncidentesSal(v))
+
+    def aristasIncidentesEnt(self, v):
+        self._vv(v)
+        return [a.indice for a in self._adyacencia[v] if a.dirigida and a._destino.indice == v]
+    def aristasIncidentesSal(self, v):
+        self._vv(v)
+        return [a.indice for a in self._adyacencia[v] if a.dirigida and a._origen.indice == v]
+
+    def verticesAdyacentesEnt(self, v):
+        self._vv(v)
+        return [a._origen.indice for a in self._adyacencia[v] if a.dirigida and a._destino.indice == v]
+    def verticesAdyacentesSal(self, v):
+        self._vv(v)
+        return [a._destino.indice for a in self._adyacencia[v] if a.dirigida and a._origen.indice == v]
+
+    def destino(self, e):
+        self._ve(e); a = self._aristas[e]
+        if not a.dirigida: raise ValueError(f"E{e} no es dirigida")
+        return a._destino.indice
+    def origen(self, e):
+        self._ve(e); a = self._aristas[e]
+        if not a.dirigida: raise ValueError(f"E{e} no es dirigida")
+        return a._origen.indice
+    def esDirigida(self, e):
+        self._ve(e); return self._aristas[e].dirigida
+
+    # ── Modificaciones ──
+    def insertaVertice(self, objeto=None):
+        idx = self._cv; self._cv += 1
+        v = Vertice(idx, objeto)
+        self._vertices[idx] = v
+        self._adyacencia[idx] = []
+        return idx
+
+    def insertaArista(self, v, w, objeto=None):
+        self._vv(v); self._vv(w)
+        idx = self._ca; self._ca += 1
+        a = Arista(idx, self._vertices[v], self._vertices[w], objeto, False)
+        self._aristas[idx] = a
+        self._adyacencia[v].append(a)
+        if v != w: self._adyacencia[w].append(a)
+        return idx
+
+    def insertaAristaDirigida(self, v, w, objeto=None):
+        self._vv(v); self._vv(w)
+        idx = self._ca; self._ca += 1
+        a = Arista(idx, self._vertices[v], self._vertices[w], objeto, True)
+        self._aristas[idx] = a
+        self._adyacencia[v].append(a)
+        if v != w: self._adyacencia[w].append(a)
+        return idx
+
+    def eliminaVertice(self, v):
+        self._vv(v)
+        for e in list(self.aristasIncidentes(v)): self.eliminaArista(e)
+        del self._vertices[v]; del self._adyacencia[v]
+
+    def eliminaArista(self, e):
+        self._ve(e); a = self._aristas[e]
+        v, w = a._origen.indice, a._destino.indice
+        self._adyacencia[v] = [x for x in self._adyacencia[v] if x.indice != e]
+        if v != w:
+            self._adyacencia[w] = [x for x in self._adyacencia[w] if x.indice != e]
+        del self._aristas[e]
+
+    def convierteNoDirigida(self, e):
+        self._ve(e); self._aristas[e].dirigida = False
+    def invierteDireccion(self, e):
+        self._ve(e); a = self._aristas[e]
+        if not a.dirigida: raise ValueError(f"E{e} no es dirigida")
+        a._origen, a._destino = a._destino, a._origen
+    def asignaDireccionDesde(self, e, v):
+        self._ve(e); self._vv(v); a = self._aristas[e]
+        w = a._destino.indice if a._origen.indice == v else a._origen.indice
+        a.dirigida = True; a._origen = self._vertices[v]; a._destino = self._vertices[w]
+    def asignaDireccionA(self, e, v):
+        self._ve(e); self._vv(v); a = self._aristas[e]
+        w = a._origen.indice if a._destino.indice == v else a._destino.indice
+        a.dirigida = True; a._origen = self._vertices[w]; a._destino = self._vertices[v]
+
+    def _vv(self, v):
+        if v not in self._vertices: raise ValueError(f"Vértice {v} no existe")
+    def _ve(self, e):
+        if e not in self._aristas: raise ValueError(f"Arista {e} no existe")
+
+
+# ══════════════════════════════════════════════════════════
+#  CANVAS WIDGET
+# ══════════════════════════════════════════════════════════
+RADIO   = 24
+C_BG    = QColor("#0d1117")
+C_GRID  = QColor("#1a1f2e")
+C_NODE  = QColor("#1c2a4a")
+C_NODE_SEL  = QColor("#0d3060")
+C_NODE_BORDER = QColor("#4a9eff")
+C_NODE_SEL_BORDER = QColor("#00d4ff")
+C_LABEL = QColor("#e0eaff")
+C_EDGE  = QColor("#3a5080")
+C_EDGE_DIR = QColor("#ff6b8a")
+C_EDGE_SEL = QColor("#ffd700")
+C_ARROW = QColor("#ff6b8a")
+C_IDX   = QColor("#7090c0")
+C_OBJ   = QColor("#a0c4ff")
+
+class GrafoCanvas(QWidget):
+    selectionChanged = pyqtSignal(object, str)  # (item, type: 'vertex'|'edge'|None)
+    logMessage       = pyqtSignal(str, str)      # (msg, level)
+
+    def __init__(self, grafo: Grafo):
+        super().__init__()
+        self.grafo = grafo
+        self.pos   = {}          # indice_vertice -> QPointF
+        self.selected      = None
+        self.selected_type = None
+        self._drag_node    = None
+        self._drag_offset  = QPointF()
+        self._edge_src     = None  # for edge-drawing mode
+        self.mode          = "select"   # select | vertex | edge | delete
+        self.setMouseTracking(True)
+        self.setMinimumSize(400, 400)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setCursor(Qt.ArrowCursor)
+
+    def set_mode(self, m):
+        self.mode = m
+        self._edge_src = None
+        cursors = {
+            "select": Qt.ArrowCursor, "vertex": Qt.CrossCursor,
+            "edge": Qt.PointingHandCursor, "delete": Qt.ForbiddenCursor
+        }
+        self.setCursor(cursors.get(m, Qt.ArrowCursor))
+        self.update()
+
+    # ── Painting ──
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        self._draw_bg(p)
+        self._draw_edges(p)
+        self._draw_vertices(p)
+        if self._edge_src is not None:
+            self._draw_edge_hint(p)
+
+    def _draw_bg(self, p):
+        p.fillRect(self.rect(), C_BG)
+        pen = QPen(C_GRID, 1)
+        p.setPen(pen)
+        step = 40
+        for x in range(0, self.width(), step):
+            p.drawLine(x, 0, x, self.height())
+        for y in range(0, self.height(), step):
+            p.drawLine(0, y, self.width(), y)
+
+    def _draw_edges(self, p):
+        for idx, arista in self.grafo._aristas.items():
+            v, w = arista._origen.indice, arista._destino.indice
+            if v not in self.pos or w not in self.pos: continue
+            pv = self.pos[v]; pw = self.pos[w]
+            selected = (self.selected_type == 'edge' and self.selected == idx)
+            color = C_EDGE_SEL if selected else (C_EDGE_DIR if arista.dirigida else C_EDGE)
+            pen = QPen(color, 2.5 if selected else 2)
+            pen.setStyle(Qt.SolidLine)
+            p.setPen(pen)
+
+            if v == w:
+                # self-loop
+                self._draw_loop(p, pv, color, arista)
+                continue
+
+            # offset if bidirectional edges exist
+            offset = self._edge_offset(v, w)
+            pv2, pw2 = self._offset_points(pv, pw, offset)
+
+            p.drawLine(pv2, pw2)
+
+            # label (objeto + indice)
+            mx = (pv2.x() + pw2.x()) / 2
+            my = (pv2.y() + pw2.y()) / 2
+            p.setPen(QPen(C_IDX))
+            f = QFont("Consolas", 8)
+            p.setFont(f)
+            lbl = f"e{idx}"
+            if arista.objeto: lbl += f":{arista.objeto}"
+            p.drawText(QPointF(mx + 4, my - 4), lbl)
+
+            if arista.dirigida:
+                self._draw_arrow(p, pv2, pw2, color)
+
+    def _edge_offset(self, v, w):
+        # Check if there's also an edge w->v
+        for a in self.grafo._aristas.values():
+            if a._origen.indice == w and a._destino.indice == v:
+                return 10
+        return 0
+
+    def _offset_points(self, p1, p2, d):
+        if d == 0: return p1, p2
+        dx = p2.x() - p1.x(); dy = p2.y() - p1.y()
+        length = math.hypot(dx, dy)
+        if length == 0: return p1, p2
+        nx = -dy / length * d; ny = dx / length * d
+        return QPointF(p1.x()+nx, p1.y()+ny), QPointF(p2.x()+nx, p2.y()+ny)
+
+    def _draw_loop(self, p, pos, color, arista):
+        r = RADIO + 18
+        p.setPen(QPen(color, 2))
+        p.drawEllipse(QRectF(pos.x() - r/2, pos.y() - RADIO - r, r, r))
+
+    def _draw_arrow(self, p, src, dst, color):
+        dx = dst.x() - src.x(); dy = dst.y() - src.y()
+        length = math.hypot(dx, dy)
+        if length < 1: return
+        ux = dx / length; uy = dy / length
+        tip = QPointF(dst.x() - ux * RADIO, dst.y() - uy * RADIO)
+        size = 12
+        perp_x = -uy * size * 0.4; perp_y = ux * size * 0.4
+        b1 = QPointF(tip.x() - ux*size + perp_x, tip.y() - uy*size + perp_y)
+        b2 = QPointF(tip.x() - ux*size - perp_x, tip.y() - uy*size - perp_y)
+        poly = QPolygonF([tip, b1, b2])
+        p.setBrush(QBrush(color)); p.setPen(Qt.NoPen)
+        p.drawPolygon(poly)
+
+    def _draw_vertices(self, p):
+        for idx, v in self.grafo._vertices.items():
+            if idx not in self.pos: continue
+            pos = self.pos[idx]
+            selected = (self.selected_type == 'vertex' and self.selected == idx)
+            is_src    = (self._edge_src == idx)
+
+            # glow for selected
+            if selected or is_src:
+                glow = QColor(0, 200, 255, 40) if not is_src else QColor(255, 200, 0, 50)
+                p.setBrush(QBrush(glow)); p.setPen(Qt.NoPen)
+                p.drawEllipse(pos, RADIO+8, RADIO+8)
+
+            # fill
+            grad = QLinearGradient(pos.x(), pos.y()-RADIO, pos.x(), pos.y()+RADIO)
+            if selected:
+                grad.setColorAt(0, QColor("#1a4080")); grad.setColorAt(1, QColor("#0a2050"))
+            elif is_src:
+                grad.setColorAt(0, QColor("#806000")); grad.setColorAt(1, QColor("#503800"))
+            else:
+                grad.setColorAt(0, QColor("#1c2a4a")); grad.setColorAt(1, QColor("#0d1825"))
+            p.setBrush(QBrush(grad))
+
+            border = C_NODE_SEL_BORDER if selected else (QColor("#ffd700") if is_src else C_NODE_BORDER)
+            p.setPen(QPen(border, 2.5 if selected else 1.8))
+            p.drawEllipse(pos, RADIO, RADIO)
+
+            # index label
+            p.setPen(QPen(C_LABEL))
+            p.setFont(QFont("Consolas", 10, QFont.Bold))
+            p.drawText(QRectF(pos.x()-RADIO, pos.y()-RADIO, RADIO*2, RADIO*2),
+                       Qt.AlignCenter, str(idx))
+
+            # object label below
+            if v.objeto:
+                p.setPen(QPen(C_OBJ))
+                p.setFont(QFont("Consolas", 8))
+                p.drawText(QPointF(pos.x() - 30, pos.y() + RADIO + 14), str(v.objeto))
+
+    def _draw_edge_hint(self, p):
+        if self._edge_src not in self.pos: return
+        src = self.pos[self._edge_src]
+        mp  = self.mapFromGlobal(QCursor.pos())
+        pen = QPen(QColor("#ffd70088"), 2, Qt.DashLine)
+        p.setPen(pen)
+        p.drawLine(src, QPointF(mp.x(), mp.y()))
+
+    # ── Mouse ──
+    def mousePressEvent(self, e):
+        pt = QPointF(e.pos())
+        if self.mode == "vertex" and e.button() == Qt.LeftButton:
+            self._add_vertex_at(pt)
+        elif self.mode == "edge" and e.button() == Qt.LeftButton:
+            self._edge_click(pt)
+        elif self.mode == "delete" and e.button() == Qt.LeftButton:
+            self._delete_at(pt)
+        elif self.mode == "select":
+            if e.button() == Qt.LeftButton:
+                node = self._node_at(pt)
+                if node is not None:
+                    self._drag_node   = node
+                    self._drag_offset = pt - self.pos[node]
+                    self._select('vertex', node)
+                else:
+                    edge = self._edge_at(pt)
+                    if edge is not None: self._select('edge', edge)
+                    else: self._select(None, None)
+            elif e.button() == Qt.RightButton:
+                node = self._node_at(pt)
+                if node is not None: self._show_node_menu(node, e.globalPos())
+
+    def mouseMoveEvent(self, e):
+        if self._drag_node is not None and self.mode == "select":
+            self.pos[self._drag_node] = QPointF(e.pos()) - self._drag_offset
+            self.update()
+        elif self.mode == "edge" and self._edge_src is not None:
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        self._drag_node = None
+
+    def mouseDoubleClickEvent(self, e):
+        pt = QPointF(e.pos())
+        node = self._node_at(pt)
+        if node is not None:
+            self._edit_vertex(node)
+            return
+        edge = self._edge_at(pt)
+        if edge is not None:
+            self._edit_edge(edge)
+
+    def _add_vertex_at(self, pt):
+        idx = self.grafo.insertaVertice(f"v{self.grafo._cv}")
+        self.pos[idx] = pt
+        self._select('vertex', idx)
+        self.logMessage.emit(f"insertaVertice() → índice {idx}", "ok")
+        self.update()
+
+    def _edge_click(self, pt):
+        node = self._node_at(pt)
+        if node is None: return
+        if self._edge_src is None:
+            self._edge_src = node
+            self.logMessage.emit(f"Arista: origen = V{node}. Haz clic en el destino.", "info")
+            self.update()
+        else:
+            src = self._edge_src; self._edge_src = None
+            # ask directed?
+            dlg = EdgeTypeDialog(self)
+            if dlg.exec_() == QDialog.Accepted:
+                obj = dlg.obj_edit.text() or None
+                if dlg.directed_cb.isChecked():
+                    idx = self.grafo.insertaAristaDirigida(src, node, obj)
+                    self.logMessage.emit(f"insertaAristaDirigida(V{src},V{node}) → E{idx}", "ok")
+                else:
+                    idx = self.grafo.insertaArista(src, node, obj)
+                    self.logMessage.emit(f"insertaArista(V{src},V{node}) → E{idx}", "ok")
+                self._select('edge', idx)
+            self.update()
+
+    def _delete_at(self, pt):
+        node = self._node_at(pt)
+        if node is not None:
+            self.grafo.eliminaVertice(node)
+            del self.pos[node]
+            self.logMessage.emit(f"eliminaVertice({node})", "ok")
+            self._select(None, None); self.update(); return
+        edge = self._edge_at(pt)
+        if edge is not None:
+            self.grafo.eliminaArista(edge)
+            self.logMessage.emit(f"eliminaArista({edge})", "ok")
+            self._select(None, None); self.update()
+
+    def _node_at(self, pt):
+        for idx, p in self.pos.items():
+            if math.hypot(pt.x()-p.x(), pt.y()-p.y()) <= RADIO + 4:
+                return idx
+        return None
+
+    def _edge_at(self, pt):
+        for idx, a in self.grafo._aristas.items():
+            v, w = a._origen.indice, a._destino.indice
+            if v not in self.pos or w not in self.pos: continue
+            pv = self.pos[v]; pw = self.pos[w]
+            if self._dist_to_segment(pt, pv, pw) < 8:
+                return idx
+        return None
+
+    def _dist_to_segment(self, p, a, b):
+        dx = b.x()-a.x(); dy = b.y()-a.y()
+        if dx == dy == 0: return math.hypot(p.x()-a.x(), p.y()-a.y())
+        t = max(0, min(1, ((p.x()-a.x())*dx+(p.y()-a.y())*dy)/(dx*dx+dy*dy)))
+        return math.hypot(p.x()-(a.x()+t*dx), p.y()-(a.y()+t*dy))
+
+    def _select(self, typ, idx):
+        self.selected = idx; self.selected_type = typ
+        self.selectionChanged.emit(idx, typ or "none")
+        self.update()
+
+    def _edit_vertex(self, idx):
+        v = self.grafo._vertices[idx]
+        dlg = EditVertexDialog(str(v.objeto or ""), self)
+        if dlg.exec_() == QDialog.Accepted:
+            v.objeto = dlg.label_edit.text() or None
+            self.update()
+
+    def _edit_edge(self, idx):
+        a = self.grafo._aristas[idx]
+        dlg = EditEdgeDialog(str(a.objeto or ""), a.dirigida, self)
+        if dlg.exec_() == QDialog.Accepted:
+            a.objeto   = dlg.label_edit.text() or None
+            a.dirigida = dlg.directed_cb.isChecked()
+            self.update()
+
+    def _show_node_menu(self, node, gpos):
+        from PyQt5.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLE)
+        menu.addAction(f"✏ Editar V{node}",   lambda: self._edit_vertex(node))
+        menu.addAction(f"🗑 Eliminar V{node}", lambda: self._delete_node_confirm(node))
+        menu.exec_(gpos)
+
+    def _delete_node_confirm(self, node):
+        self.grafo.eliminaVertice(node)
+        del self.pos[node]
+        self.logMessage.emit(f"eliminaVertice({node})", "ok")
+        self._select(None, None); self.update()
+
+    def auto_layout(self):
+        vs = self.grafo.vertices()
+        if not vs: return
+        n = len(vs); cx = self.width()/2; cy = self.height()/2; r = min(cx, cy) * 0.7
+        for i, v in enumerate(vs):
+            angle = 2 * math.pi * i / n - math.pi/2
+            self.pos[v] = QPointF(cx + r*math.cos(angle), cy + r*math.sin(angle))
+        self.update()
+
+    def load_example(self):
+        g = self.grafo
+        for v in list(g.vertices()): g.eliminaVertice(v)
+        self.pos.clear()
+        a = g.insertaVertice("A"); b = g.insertaVertice("B")
+        c = g.insertaVertice("C"); d = g.insertaVertice("D")
+        e = g.insertaVertice("E")
+        g.insertaArista(a, b, "5")
+        g.insertaAristaDirigida(b, c, "3")
+        g.insertaAristaDirigida(c, d, "7")
+        g.insertaArista(d, e, "2")
+        g.insertaAristaDirigida(e, a, "4")
+        g.insertaArista(b, d, "6")
+        self.auto_layout()
+        self.logMessage.emit("Ejemplo cargado (5 vértices, 6 aristas)", "info")
+
+
+# ══════════════════════════════════════════════════════════
+#  DIALOGS
+# ══════════════════════════════════════════════════════════
+DIALOG_STYLE = """
+QDialog { background:#0d1117; color:#e0eaff; }
+QLabel  { color:#a0b4d0; font-size:12px; }
+QLineEdit { background:#1c2a4a; border:1px solid #2a3a5a; color:#e0eaff;
+            padding:5px; border-radius:4px; font-family:Consolas; }
+QCheckBox { color:#e0eaff; }
+QPushButton { background:#1c3060; color:#e0eaff; border:1px solid #2a4a80;
+              padding:6px 16px; border-radius:4px; font-family:Consolas; }
+QPushButton:hover { background:#1e4080; }
+"""
+MENU_STYLE = """
+QMenu { background:#0d1117; color:#e0eaff; border:1px solid #1e2a40; font-family:Consolas; font-size:12px; }
+QMenu::item:selected { background:#1c3060; }
+"""
+
+class EditVertexDialog(QDialog):
+    def __init__(self, label, parent=None):
+        super().__init__(parent); self.setWindowTitle("Editar Vértice")
+        self.setStyleSheet(DIALOG_STYLE); self.setFixedSize(280, 130)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Objeto / Etiqueta:"))
+        self.label_edit = QLineEdit(label); lay.addWidget(self.label_edit)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+class EditEdgeDialog(QDialog):
+    def __init__(self, label, directed, parent=None):
+        super().__init__(parent); self.setWindowTitle("Editar Arista")
+        self.setStyleSheet(DIALOG_STYLE); self.setFixedSize(280, 170)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Objeto / Peso:"))
+        self.label_edit = QLineEdit(label); lay.addWidget(self.label_edit)
+        self.directed_cb = QCheckBox("Arista Dirigida"); self.directed_cb.setChecked(directed)
+        lay.addWidget(self.directed_cb)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+class EdgeTypeDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent); self.setWindowTitle("Nueva Arista")
+        self.setStyleSheet(DIALOG_STYLE); self.setFixedSize(280, 170)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Objeto / Peso (opcional):"))
+        self.obj_edit = QLineEdit(); lay.addWidget(self.obj_edit)
+        self.directed_cb = QCheckBox("Arista Dirigida"); lay.addWidget(self.directed_cb)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+
+# ══════════════════════════════════════════════════════════
+#  MAIN WINDOW
+# ══════════════════════════════════════════════════════════
+MAIN_STYLE = """
+QMainWindow, QWidget { background:#0d1117; color:#e0eaff; font-family:Consolas; font-size:12px; }
+QTabWidget::pane { border:1px solid #1e2a40; }
+QTabBar::tab { background:#0d1117; color:#5a7090; padding:6px 14px; border:1px solid #1e2a40; border-bottom:none; }
+QTabBar::tab:selected { background:#1c2a4a; color:#e0eaff; border-top:2px solid #4a9eff; }
+QGroupBox { border:1px solid #1e2a40; border-radius:6px; margin-top:10px; padding:8px; color:#5a7090; font-size:11px; }
+QGroupBox::title { subcontrol-origin:margin; left:8px; color:#4a7ab0; }
+QLineEdit, QSpinBox, QComboBox {
+  background:#1c2a4a; border:1px solid #2a3a5a; color:#e0eaff;
+  padding:5px 8px; border-radius:4px; }
+QLineEdit:focus, QSpinBox:focus { border-color:#4a9eff; }
+QSpinBox::up-button, QSpinBox::down-button { background:#2a3a5a; border:none; }
+QCheckBox { color:#c0d4f0; }
+QCheckBox::indicator { width:16px; height:16px; border:1px solid #2a3a5a; border-radius:3px; background:#1c2a4a; }
+QCheckBox::indicator:checked { background:#1c4080; border-color:#4a9eff; }
+QPushButton {
+  background:#1c3060; color:#e0eaff; border:1px solid #2a4a80;
+  padding:6px 12px; border-radius:5px; font-family:Consolas; }
+QPushButton:hover { background:#1e4080; border-color:#4a9eff; }
+QPushButton:pressed { background:#0d2040; }
+QPushButton#btn-danger { background:#401020; border-color:#803040; color:#ffb0b0; }
+QPushButton#btn-danger:hover { background:#601830; }
+QPushButton#btn-ok { background:#102840; border-color:#2a6080; color:#80d0ff; }
+QPushButton#btn-ok:hover { background:#184060; }
+QTextEdit { background:#0a0e16; border:1px solid #1e2a40; color:#80b0d0;
+            font-family:Consolas; font-size:11px; }
+QScrollBar:vertical { background:#0d1117; width:8px; }
+QScrollBar::handle:vertical { background:#1e2a40; border-radius:4px; }
+QStatusBar { background:#080c12; color:#3a5070; border-top:1px solid #1e2a40; font-size:11px; }
+QLabel#result-label { color:#80d0a0; background:#0a1020; border:1px solid #1a3040; border-radius:4px; padding:6px; }
+"""
+
+def styled_btn(text, color="default"):
+    b = QPushButton(text)
+    if color == "danger": b.setObjectName("btn-danger")
+    elif color == "ok":   b.setObjectName("btn-ok")
+    return b
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.grafo = Grafo()
+        self.setWindowTitle("Editor de Grafos — TAD Completo")
+        self.setMinimumSize(1100, 680)
+        self.setStyleSheet(MAIN_STYLE)
+
+        # ── Toolbar ──
+        tb = QToolBar("Herramientas")
+        tb.setMovable(False)
+        tb.setStyleSheet("QToolBar{background:#080c12;border-bottom:1px solid #1e2a40;spacing:4px;padding:4px;}")
+        self.addToolBar(tb)
+
+        self.tool_actions = {}
+        tools = [
+            ("↖  Seleccionar", "select"),
+            ("◉  Agregar Vértice", "vertex"),
+            ("→  Agregar Arista", "edge"),
+            ("✕  Eliminar", "delete"),
+        ]
+        for name, key in tools:
+            a = QAction(name, self)
+            a.setCheckable(True)
+            a.triggered.connect(lambda checked, k=key: self._set_tool(k))
+            tb.addAction(a)
+            self.tool_actions[key] = a
+        self.tool_actions["select"].setChecked(True)
+
+        tb.addSeparator()
+        load_btn = QAction("★  Ejemplo", self); load_btn.triggered.connect(self._load_example); tb.addAction(load_btn)
+        layout_btn = QAction("⊞  Auto-distribuir", self); layout_btn.triggered.connect(self._auto_layout); tb.addAction(layout_btn)
+        tb.addSeparator()
+        hint_lbl = QLabel("  Doble clic en nodo/arista para editar · Clic derecho en nodo para menú  ")
+        hint_lbl.setStyleSheet("color:#3a5070; font-size:11px;")
+        tb.addWidget(hint_lbl)
+
+        # ── Central ──
+        central = QWidget(); self.setCentralWidget(central)
+        main_lay = QHBoxLayout(central); main_lay.setContentsMargins(0,0,0,0); main_lay.setSpacing(0)
+
+        splitter = QSplitter(Qt.Horizontal)
+        main_lay.addWidget(splitter)
+
+        # Canvas
+        self.canvas = GrafoCanvas(self.grafo)
+        self.canvas.selectionChanged.connect(self._on_selection)
+        self.canvas.logMessage.connect(self._log)
+        splitter.addWidget(self.canvas)
+
+        # Side panel
+        side = QTabWidget(); side.setFixedWidth(340)
+        splitter.addWidget(side)
+        splitter.setStretchFactor(0, 1)
+
+        side.addTab(self._build_add_tab(),   "  Agregar  ")
+        side.addTab(self._build_query_tab(), " Consultar ")
+        side.addTab(self._build_ops_tab(),   " Operaciones ")
+        side.addTab(self._build_log_tab(),   "   Log   ")
+
+        # Status bar
+        self.status = QStatusBar(); self.setStatusBar(self.status)
+        self._update_status()
+
+    def _set_tool(self, key):
+        for k, a in self.tool_actions.items(): a.setChecked(k == key)
+        self.canvas.set_mode(key)
+        hints = {
+            "select": "Seleccionar: arrastra nodos · doble clic para editar",
+            "vertex": "Agregar Vértice: haz clic en el canvas",
+            "edge":   "Agregar Arista: haz clic en nodo origen, luego en destino",
+            "delete": "Eliminar: haz clic en el elemento a eliminar",
+        }
+        self.status.showMessage(hints.get(key, ""))
+
+    def _load_example(self):
+        self.canvas.load_example()
+        self._update_status()
+
+    def _auto_layout(self):
+        self.canvas.auto_layout()
+
+    def _update_status(self):
+        g = self.grafo
+        self.status.showMessage(
+            f"  Vértices: {g.numVertices()}   Aristas: {g.numAristas()}   "
+            f"Dirigidas: {len(g.aristasDirigidas())}   No dirigidas: {len(g.aristasNoDirigidas())}"
+        )
+
+    def _log(self, msg, level="info"):
+        colors = {"ok": "#80d0a0", "err": "#ff8080", "info": "#80b0ff"}
+        c = colors.get(level, "#c0c0c0")
+        self.log_edit.append(f'<span style="color:#3a5070">[{level.upper()}]</span> <span style="color:{c}">{msg}</span>')
+        self._update_status()
+
+    def _on_selection(self, idx, typ):
+        self._update_selected_info(idx, typ)
+
+    def _update_selected_info(self, idx, typ):
+        if typ == "vertex" and idx is not None:
+            v = self.grafo._vertices.get(idx)
+            if v:
+                info = (f"<b>Vértice {idx}</b><br>"
+                        f"Objeto: {v.objeto}<br>"
+                        f"Grado: {self.grafo.grado(idx)}<br>"
+                        f"Adyacentes: {self.grafo.verticesAdyacentes(idx)}<br>"
+                        f"Aristas incidentes: {self.grafo.aristasIncidentes(idx)}<br>"
+                        f"Grado entrada: {self.grafo.gradoEnt(idx)}<br>"
+                        f"Grado salida: {self.grafo.gradoSalida(idx)}")
+                self.sel_info.setText(info)
+        elif typ == "edge" and idx is not None:
+            a = self.grafo._aristas.get(idx)
+            if a:
+                info = (f"<b>Arista {idx}</b><br>"
+                        f"Objeto: {a.objeto}<br>"
+                        f"Tipo: {'DIRIGIDA →' if a.dirigida else 'NO DIRIGIDA —'}<br>"
+                        f"Origen: V{a._origen.indice}<br>"
+                        f"Destino: V{a._destino.indice}")
+                self.sel_info.setText(info)
+        else:
+            self.sel_info.setText("<span style='color:#3a5070'>Nada seleccionado</span>")
+
+    # ─────────────────────────────────────────────
+    # BUILD TABS
+    # ─────────────────────────────────────────────
+    def _build_add_tab(self):
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(10,10,10,10)
+
+        grp_v = QGroupBox("Nuevo Vértice"); fl = QFormLayout(grp_v)
+        self.v_obj = QLineEdit(); self.v_obj.setPlaceholderText("ej: A, Ciudad, 42")
+        fl.addRow("Objeto:", self.v_obj)
+        btn_v = styled_btn("+ Agregar Vértice", "ok")
+        btn_v.clicked.connect(self._add_vertex); fl.addRow(btn_v)
+        lay.addWidget(grp_v)
+
+        grp_e = QGroupBox("Nueva Arista"); fl2 = QFormLayout(grp_e)
+        self.e_from = QSpinBox(); self.e_from.setRange(0, 9999)
+        self.e_to   = QSpinBox(); self.e_to.setRange(0, 9999)
+        self.e_obj  = QLineEdit(); self.e_obj.setPlaceholderText("ej: 5, ruta")
+        self.e_dir  = QCheckBox("Arista Dirigida")
+        fl2.addRow("Origen (v):", self.e_from)
+        fl2.addRow("Destino (w):", self.e_to)
+        fl2.addRow("Objeto:", self.e_obj)
+        fl2.addRow(self.e_dir)
+        btn_e = styled_btn("+ Agregar Arista", "ok")
+        btn_e.clicked.connect(self._add_edge); fl2.addRow(btn_e)
+        lay.addWidget(grp_e)
+        lay.addStretch()
+        return w
+
+    def _build_query_tab(self):
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(10,10,10,10)
+
+        # General
+        grp_g = QGroupBox("Consultas Generales"); gl = QVBoxLayout(grp_g)
+        for lbl, fn in [
+            ("numVertices()",    lambda: self.grafo.numVertices()),
+            ("numAristas()",     lambda: self.grafo.numAristas()),
+            ("vertices()",       lambda: self.grafo.vertices()),
+            ("aristas()",        lambda: self.grafo.aristas()),
+            ("aristasDirigidas()",    lambda: self.grafo.aristasDirigidas()),
+            ("aristasNoDirigidas()",  lambda: self.grafo.aristasNoDirigidas()),
+        ]:
+            b = QPushButton(lbl)
+            b.clicked.connect(lambda _, f=fn, l=lbl: self._show_result(l, f()))
+            gl.addWidget(b)
+        lay.addWidget(grp_g)
+
+        # Por vértice
+        grp_v = QGroupBox("Consultas por Vértice v"); vl = QVBoxLayout(grp_v)
+        row = QHBoxLayout(); row.addWidget(QLabel("Índice v:"))
+        self.q_v = QSpinBox(); self.q_v.setRange(0, 9999); row.addWidget(self.q_v)
+        vl.addLayout(row)
+        for lbl, fn in [
+            ("grado(v)",                 lambda v: self.grafo.grado(v)),
+            ("verticesAdyacentes(v)",    lambda v: self.grafo.verticesAdyacentes(v)),
+            ("aristasIncidentes(v)",     lambda v: self.grafo.aristasIncidentes(v)),
+            ("gradoEnt(v)",              lambda v: self.grafo.gradoEnt(v)),
+            ("gradoSalida(v)",           lambda v: self.grafo.gradoSalida(v)),
+            ("aristasIncidentesEnt(v)",  lambda v: self.grafo.aristasIncidentesEnt(v)),
+            ("aristasIncidentesSal(v)",  lambda v: self.grafo.aristasIncidentesSal(v)),
+            ("verticesAdyacentesEnt(v)", lambda v: self.grafo.verticesAdyacentesEnt(v)),
+            ("verticesAdyacentesSal(v)", lambda v: self.grafo.verticesAdyacentesSal(v)),
+        ]:
+            b = QPushButton(lbl)
+            b.clicked.connect(lambda _, f=fn, l=lbl: self._show_result(l, f(self.q_v.value())))
+            vl.addWidget(b)
+        lay.addWidget(grp_v)
+
+        # Por arista
+        grp_e = QGroupBox("Consultas por Arista e"); el = QVBoxLayout(grp_e)
+        row2 = QHBoxLayout(); row2.addWidget(QLabel("Índice e:"))
+        self.q_e = QSpinBox(); self.q_e.setRange(0, 9999); row2.addWidget(self.q_e)
+        el.addLayout(row2)
+        for lbl, fn in [
+            ("verticesFinales(e)", lambda e: self.grafo.verticesFinales(e)),
+            ("esDirigida(e)",      lambda e: self.grafo.esDirigida(e)),
+            ("origen(e)",          lambda e: self.grafo.origen(e)),
+            ("destino(e)",         lambda e: self.grafo.destino(e)),
+        ]:
+            b = QPushButton(lbl)
+            b.clicked.connect(lambda _, f=fn, l=lbl: self._show_result(l, f(self.q_e.value())))
+            el.addWidget(b)
+        lay.addWidget(grp_e)
+
+        # 2 parámetros
+        grp_2 = QGroupBox("Consultas con 2 parámetros"); tl = QVBoxLayout(grp_2)
+        r3 = QHBoxLayout()
+        r3.addWidget(QLabel("v:")); self.q_v2 = QSpinBox(); self.q_v2.setRange(0,9999); r3.addWidget(self.q_v2)
+        r3.addWidget(QLabel("w/e:")); self.q_w2 = QSpinBox(); self.q_w2.setRange(0,9999); r3.addWidget(self.q_w2)
+        tl.addLayout(r3)
+        b_adj = QPushButton("esAdyacente(v, w)")
+        b_adj.clicked.connect(lambda: self._show_result("esAdyacente", self.grafo.esAdyacente(self.q_v2.value(), self.q_w2.value())))
+        b_opp = QPushButton("opuesto(v, e)")
+        b_opp.clicked.connect(lambda: self._show_result("opuesto", self.grafo.opuesto(self.q_v2.value(), self.q_w2.value())))
+        tl.addWidget(b_adj); tl.addWidget(b_opp)
+        lay.addWidget(grp_2)
+
+        # Result
+        self.result_lbl = QLabel("— resultado —"); self.result_lbl.setObjectName("result-label")
+        self.result_lbl.setWordWrap(True)
+        lay.addWidget(self.result_lbl)
+        lay.addStretch()
+        return w
+
+    def _build_ops_tab(self):
+        w = QWidget(); lay = QVBoxLayout(w); lay.setContentsMargins(10,10,10,10)
+
+        # Selected info
+        self.sel_info = QLabel("<span style='color:#3a5070'>Nada seleccionado</span>")
+        self.sel_info.setObjectName("result-label"); self.sel_info.setWordWrap(True)
+        self.sel_info.setMinimumHeight(90)
+        lay.addWidget(self.sel_info)
+
+        # Eliminar
+        grp_d = QGroupBox("Eliminar"); dl = QFormLayout(grp_d)
+        self.del_v = QSpinBox(); self.del_v.setRange(0, 9999)
+        btn_dv = styled_btn("eliminaVertice(v)", "danger"); btn_dv.clicked.connect(self._op_del_v)
+        self.del_e = QSpinBox(); self.del_e.setRange(0, 9999)
+        btn_de = styled_btn("eliminaArista(e)", "danger"); btn_de.clicked.connect(self._op_del_e)
+        dl.addRow("Vértice:", self.del_v); dl.addRow(btn_dv)
+        dl.addRow("Arista:", self.del_e); dl.addRow(btn_de)
+        lay.addWidget(grp_d)
+
+        # Dirección
+        grp_dir = QGroupBox("Modificar Dirección"); rl = QFormLayout(grp_dir)
+        self.dir_e = QSpinBox(); self.dir_e.setRange(0, 9999)
+        self.dir_v = QSpinBox(); self.dir_v.setRange(0, 9999)
+        rl.addRow("Arista e:", self.dir_e)
+        rl.addRow("Vértice v:", self.dir_v)
+        for lbl, fn in [
+            ("convierteNoDirigida(e)",   self._op_cnd),
+            ("invierteDireccion(e)",     self._op_inv),
+            ("asignaDireccionDesde(e,v)",self._op_add),
+            ("asignaDireccionA(e,v)",    self._op_ada),
+        ]:
+            b = QPushButton(lbl); b.clicked.connect(fn); rl.addRow(b)
+        lay.addWidget(grp_dir)
+        lay.addStretch()
+        return w
+
+    def _build_log_tab(self):
+        w = QWidget(); lay = QVBoxLayout(w)
+        self.log_edit = QTextEdit(); self.log_edit.setReadOnly(True)
+        lay.addWidget(self.log_edit)
+        btn_clear = styled_btn("Limpiar log")
+        btn_clear.clicked.connect(self.log_edit.clear)
+        lay.addWidget(btn_clear)
+        return w
+
+    # ─────────────────────────────────────────────
+    # ACTIONS
+    # ─────────────────────────────────────────────
+    def _add_vertex(self):
+        try:
+            obj = self.v_obj.text() or None
+            idx = self.grafo.insertaVertice(obj)
+            # place it at center + small offset
+            cx = self.canvas.width() / 2 + (self.grafo.numVertices()-1)*30
+            cy = self.canvas.height() / 2
+            self.canvas.pos[idx] = QPointF(cx, cy)
+            self.canvas.update()
+            self._log(f"insertaVertice('{obj}') → índice {idx}", "ok")
+            self.v_obj.clear()
+        except Exception as ex:
+            self._log(str(ex), "err")
+
+    def _add_edge(self):
+        try:
+            v = self.e_from.value(); w = self.e_to.value()
+            obj = self.e_obj.text() or None
+            if self.e_dir.isChecked():
+                idx = self.grafo.insertaAristaDirigida(v, w, obj)
+                self._log(f"insertaAristaDirigida(V{v},V{w}) → E{idx}", "ok")
+            else:
+                idx = self.grafo.insertaArista(v, w, obj)
+                self._log(f"insertaArista(V{v},V{w}) → E{idx}", "ok")
+            self.canvas.update()
+            self.e_obj.clear()
+        except Exception as ex:
+            self._log(str(ex), "err")
+
+    def _show_result(self, label, result):
+        self.result_lbl.setText(f"<b style='color:#4a9eff'>{label}</b><br>{result}")
+
+    def _safe(self, fn, *args):
+        try:
+            fn(*args)
+            self.canvas.update()
+            self._update_status()
+        except Exception as ex:
+            self._log(str(ex), "err")
+
+    def _op_del_v(self):
+        v = self.del_v.value()
+        def do():
+            if v in self.canvas.pos: del self.canvas.pos[v]
+            self.grafo.eliminaVertice(v)
+            self.canvas._select(None, None)
+            self._log(f"eliminaVertice({v})", "ok")
+        self._safe(do)
+
+    def _op_del_e(self):
+        e = self.del_e.value()
+        def do():
+            self.grafo.eliminaArista(e)
+            self.canvas._select(None, None)
+            self._log(f"eliminaArista({e})", "ok")
+        self._safe(do)
+
+    def _op_cnd(self):
+        e = self.dir_e.value()
+        def do():
+            self.grafo.convierteNoDirigida(e)
+            self._log(f"convierteNoDirigida({e})", "ok")
+        self._safe(do)
+
+    def _op_inv(self):
+        e = self.dir_e.value()
+        def do():
+            self.grafo.invierteDireccion(e)
+            self._log(f"invierteDireccion({e})", "ok")
+        self._safe(do)
+
+    def _op_add(self):
+        e, v = self.dir_e.value(), self.dir_v.value()
+        def do():
+            self.grafo.asignaDireccionDesde(e, v)
+            self._log(f"asignaDireccionDesde(E{e}, V{v})", "ok")
+        self._safe(do)
+
+    def _op_ada(self):
+        e, v = self.dir_e.value(), self.dir_v.value()
+        def do():
+            self.grafo.asignaDireccionA(e, v)
+            self._log(f"asignaDireccionA(E{e}, V{v})", "ok")
+        self._safe(do)
+
+
+# ══════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    palette = QPalette()
+    palette.setColor(QPalette.Window,       QColor("#0d1117"))
+    palette.setColor(QPalette.WindowText,   QColor("#e0eaff"))
+    palette.setColor(QPalette.Base,         QColor("#1c2a4a"))
+    palette.setColor(QPalette.Text,         QColor("#e0eaff"))
+    palette.setColor(QPalette.Button,       QColor("#1c3060"))
+    palette.setColor(QPalette.ButtonText,   QColor("#e0eaff"))
+    palette.setColor(QPalette.Highlight,    QColor("#1e4080"))
+    palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+    app.setPalette(palette)
+
+    win = MainWindow()
+    win.show()
+
+    # Auto-load example on start
+    QTimer.singleShot(100, win._load_example)
+
+    sys.exit(app.exec_())
