@@ -1,0 +1,668 @@
+"""
+Grafo Sureste de México — Interfaz Gráfica PySide6
+Modo oscuro con acento esmeralda/teal
+Sin dependencias externas además de PySide6
+"""
+
+import heapq
+import sys
+from itertools import permutations
+
+from PySide6.QtCore    import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui     import QFont, QColor, QPainter, QPen, QBrush, QPolygonF
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QLabel, QPushButton, QTextEdit, QFrame, QSplitter,
+    QScrollArea, QSizePolicy, QGraphicsDropShadowEffect
+)
+from PySide6.QtCore import QPointF
+
+# ─── DATOS ───────────────────────────────────────────────────────────────────
+
+ESTADOS = {
+    "YUC": ("Mérida",        "Yucatán"),
+    "CAM": ("Campeche",      "Campeche"),
+    "QRO": ("Cancún",        "Quintana Roo"),
+    "TAB": ("Villahermosa",  "Tabasco"),
+    "CHI": ("Tuxtla Gtz.",   "Chiapas"),
+    "OAX": ("Oaxaca",        "Oaxaca"),
+    "VER": ("Veracruz",      "Veracruz"),
+}
+
+CONEXIONES = [
+    ("YUC", "QRO",  718,  310, "3.5 h"),
+    ("YUC", "CAM",  350,  185, "2.5 h"),
+    ("CAM", "TAB",  620,  380, "5.5 h"),
+    ("TAB", "CHI",  480,  250, "4.0 h"),
+    ("TAB", "VER",  890,  475, "6.0 h"),
+    ("CHI", "OAX", 1150,  550, "8.5 h"),
+    ("OAX", "VER",  960,  465, "6.5 h"),
+]
+
+# Posiciones relativas en el widget del grafo (0.0–1.0)
+POSICIONES = {
+    "QRO": (0.55, 0.05),
+    "YUC": (0.30, 0.25),
+    "CAM": (0.15, 0.50),
+    "TAB": (0.42, 0.55),
+    "CHI": (0.60, 0.72),
+    "OAX": (0.80, 0.60),
+    "VER": (0.85, 0.35),
+}
+
+# ─── LÓGICA ──────────────────────────────────────────────────────────────────
+
+def construir_grafo():
+    g = {e: {} for e in ESTADOS}
+    for o, d, c, km, t in CONEXIONES:
+        g[o][d] = {"costo": c, "km": km}
+        g[d][o] = {"costo": c, "km": km}
+    return g
+
+def dijkstra(grafo, origen, destino):
+    dist = {n: float("inf") for n in grafo}
+    prev = {n: None for n in grafo}
+    dist[origen] = 0
+    heap = [(0, origen)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]: continue
+        for v, datos in grafo[u].items():
+            nd = d + datos["costo"]
+            if nd < dist[v]:
+                dist[v] = nd; prev[v] = u
+                heapq.heappush(heap, (nd, v))
+    cam = []; cur = destino
+    while cur: cam.append(cur); cur = prev[cur]
+    cam.reverse()
+    return cam, dist[destino]
+
+def inciso_a(grafo):
+    nodos = list(ESTADOS.keys())
+    mejor_c = float("inf"); mejor_r = None
+    for inicio in nodos:
+        otros = [n for n in nodos if n != inicio]
+        for perm in permutations(otros):
+            ruta = [inicio] + list(perm)
+            c = 0; ok = True
+            for i in range(len(ruta) - 1):
+                a, b = ruta[i], ruta[i+1]
+                if b in grafo[a]: c += grafo[a][b]["costo"]
+                else: ok = False; break
+            if ok and c < mejor_c: mejor_c = c; mejor_r = ruta
+    return mejor_r, mejor_c
+
+def inciso_b(grafo):
+    ruta = ["QRO","YUC","CAM","TAB","CHI","OAX","VER","TAB"]
+    c = sum(grafo[ruta[i]][ruta[i+1]]["costo"] for i in range(len(ruta)-1))
+    return ruta, c
+
+# ─── WORKER THREAD ───────────────────────────────────────────────────────────
+
+class Worker(QThread):
+    result = Signal(str, list, int)
+
+    def __init__(self, modo, grafo):
+        super().__init__()
+        self.modo = modo
+        self.grafo = grafo
+
+    def run(self):
+        if self.modo == "a":
+            ruta, costo = inciso_a(self.grafo)
+        else:
+            ruta, costo = inciso_b(self.grafo)
+        self.result.emit(self.modo, ruta, costo)
+
+# ─── WIDGET DEL GRAFO ────────────────────────────────────────────────────────
+
+class GrafoWidget(QWidget):
+    nodo_clicked = Signal(str)
+
+    TEAL    = QColor("#1de9b6")
+    AMBER   = QColor("#ffc107")
+    SURFACE = QColor("#1e2a2a")
+    EDGE_C  = QColor("#2e4a4a")
+    TEXT_C  = QColor("#e0f2f1")
+    DIM_C   = QColor("#37474f")
+
+    def __init__(self):
+        super().__init__()
+        self.grafo = construir_grafo()
+        self.ruta_activa = []
+        self.nodo_hover = None
+        self.setMinimumSize(420, 360)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMouseTracking(True)
+
+    def _pos(self, key):
+        rx, ry = POSICIONES[key]
+        m = 36
+        w = self.width() - 2*m
+        h = self.height() - 2*m
+        return QPointF(m + rx * w, m + ry * h)
+
+    def set_ruta(self, ruta):
+        self.ruta_activa = ruta
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        # Fondo
+        p.fillRect(self.rect(), self.SURFACE)
+
+        ruta_aristas = set()
+        if self.ruta_activa:
+            for i in range(len(self.ruta_activa)-1):
+                a, b = self.ruta_activa[i], self.ruta_activa[i+1]
+                ruta_aristas.add((min(a,b), max(a,b)))
+
+        R = 22
+
+        # Aristas
+        for o, d, costo, km, _ in CONEXIONES:
+            key = (min(o,d), max(o,d))
+            p0 = self._pos(o); p1 = self._pos(d)
+            activa = key in ruta_aristas
+
+            if activa:
+                pen = QPen(self.TEAL, 2.5)
+            else:
+                pen = QPen(self.EDGE_C, 1.2)
+            pen.setCapStyle(Qt.RoundCap)
+            p.setPen(pen)
+
+            # Acortar la línea para no solapar el círculo del nodo
+            dx = p1.x() - p0.x(); dy = p1.y() - p0.y()
+            dist = (dx**2 + dy**2)**0.5
+            if dist == 0: continue
+            ux = dx/dist; uy = dy/dist
+            ps = QPointF(p0.x() + ux*R, p0.y() + uy*R)
+            pe = QPointF(p1.x() - ux*R, p1.y() - uy*R)
+            p.drawLine(ps, pe)
+
+            # Etiqueta de costo en el centro de la arista
+            mx = (p0.x()+p1.x())/2; my = (p0.y()+p1.y())/2
+            label = f"${costo:,}"
+            fm = p.fontMetrics()
+            lw = fm.horizontalAdvance(label) + 8
+            lh = fm.height() + 4
+            bg = QColor("#0d1f1f") if not activa else QColor("#003333")
+            p.fillRect(int(mx-lw/2), int(my-lh/2), lw, lh, bg)
+            p.setPen(QPen(self.TEAL if activa else QColor("#546e7a")))
+            p.setFont(QFont("Consolas", 8))
+            p.drawText(int(mx-lw/2), int(my-lh/2), lw, lh,
+                       Qt.AlignCenter, label)
+
+        # Nodos
+        for key in ESTADOS:
+            pos = self._pos(key)
+            cap, est = ESTADOS[key]
+            en_ruta = key in self.ruta_activa
+            es_hover = key == self.nodo_hover
+            es_repetido = (self.ruta_activa.count(key) > 1)
+
+            # Círculo
+            if es_repetido:
+                fill = QColor("#ff6f00")
+                border = QColor("#ffab40")
+            elif en_ruta:
+                fill = QColor("#004d40")
+                border = self.TEAL
+            elif es_hover:
+                fill = QColor("#1e3a3a")
+                border = self.TEAL
+            else:
+                fill = QColor("#152020")
+                border = self.DIM_C
+
+            pen_w = 2.5 if (en_ruta or es_hover) else 1.2
+            p.setPen(QPen(border, pen_w))
+            p.setBrush(QBrush(fill))
+            p.drawEllipse(pos, R, R)
+
+            # Siglas
+            p.setPen(QPen(self.TEAL if en_ruta else QColor("#90a4ae")))
+            p.setFont(QFont("Consolas", 9, QFont.Bold))
+            p.drawText(
+                int(pos.x()-R), int(pos.y()-8), R*2, 16,
+                Qt.AlignCenter, key
+            )
+
+            # Nombre bajo el nodo
+            p.setPen(QPen(self.TEXT_C if en_ruta else QColor("#607d8b")))
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(
+                int(pos.x()-50), int(pos.y()+R+3), 100, 14,
+                Qt.AlignCenter, cap
+            )
+
+    def mouseMoveEvent(self, event):
+        R = 22
+        prev = self.nodo_hover
+        self.nodo_hover = None
+        for key in ESTADOS:
+            pos = self._pos(key)
+            dx = event.position().x() - pos.x()
+            dy = event.position().y() - pos.y()
+            if dx*dx + dy*dy <= R*R:
+                self.nodo_hover = key
+                self.setCursor(Qt.PointingHandCursor)
+                break
+        else:
+            self.setCursor(Qt.ArrowCursor)
+        if self.nodo_hover != prev:
+            self.update()
+
+    def mousePressEvent(self, event):
+        if self.nodo_hover:
+            self.nodo_clicked.emit(self.nodo_hover)
+
+# ─── QSS GLOBAL ──────────────────────────────────────────────────────────────
+
+QSS = """
+QMainWindow, QWidget#root {
+    background-color: #0d1f1f;
+}
+QWidget {
+    background-color: transparent;
+    color: #e0f2f1;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 13px;
+}
+QFrame#card {
+    background-color: #152020;
+    border: 1px solid #1e3a3a;
+    border-radius: 12px;
+}
+QLabel#titulo {
+    color: #1de9b6;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+QLabel#subtitulo {
+    color: #546e7a;
+    font-size: 11px;
+    letter-spacing: 2px;
+}
+QLabel#seccion {
+    color: #80cbc4;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+}
+QPushButton {
+    background-color: #1e3a3a;
+    color: #1de9b6;
+    border: 1px solid #1de9b6;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+QPushButton:hover {
+    background-color: #1de9b6;
+    color: #0d1f1f;
+}
+QPushButton:pressed {
+    background-color: #00bfa5;
+    color: #0d1f1f;
+}
+QPushButton:disabled {
+    background-color: #152020;
+    color: #37474f;
+    border-color: #263238;
+}
+QPushButton#btn_amber {
+    color: #ffc107;
+    border-color: #ffc107;
+}
+QPushButton#btn_amber:hover {
+    background-color: #ffc107;
+    color: #0d1f1f;
+}
+QPushButton#btn_reset {
+    color: #546e7a;
+    border-color: #263238;
+    background-color: #0d1f1f;
+    font-size: 11px;
+    padding: 6px 14px;
+}
+QPushButton#btn_reset:hover {
+    background-color: #1e2a2a;
+    color: #80cbc4;
+}
+QTextEdit {
+    background-color: #0a1515;
+    color: #b2dfdb;
+    border: 1px solid #1e3a3a;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    selection-background-color: #1de9b6;
+    selection-color: #0d1f1f;
+}
+QScrollBar:vertical {
+    background: #0d1f1f;
+    width: 6px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #1e3a3a;
+    border-radius: 3px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #1de9b6; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QLabel#chip {
+    background-color: #1e3a3a;
+    color: #1de9b6;
+    border: 1px solid #1de9b6;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: 'Consolas';
+}
+QLabel#chip_amber {
+    background-color: #2a1f00;
+    color: #ffc107;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: 'Consolas';
+}
+QLabel#stat_val {
+    color: #1de9b6;
+    font-size: 22px;
+    font-weight: 700;
+    font-family: 'Consolas';
+}
+QLabel#stat_lbl {
+    color: #546e7a;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+QSplitter::handle {
+    background-color: #1e3a3a;
+    width: 1px;
+}
+"""
+
+# ─── VENTANA PRINCIPAL ────────────────────────────────────────────────────────
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.grafo = construir_grafo()
+        self.worker = None
+        self.ruta_a = None; self.costo_a = None
+        self.ruta_b = None; self.costo_b = None
+
+        self.setWindowTitle("Grafo — Sureste de México")
+        self.resize(1100, 700)
+        self.setMinimumSize(860, 580)
+
+        root = QWidget(); root.setObjectName("root")
+        self.setCentralWidget(root)
+        main_lay = QVBoxLayout(root)
+        main_lay.setContentsMargins(20, 16, 20, 16)
+        main_lay.setSpacing(14)
+
+        # ── Encabezado ──
+        header = QWidget()
+        hl = QHBoxLayout(header); hl.setContentsMargins(0,0,0,0)
+        left_hd = QVBoxLayout(); left_hd.setSpacing(2)
+        t = QLabel("Grafo Sureste de México"); t.setObjectName("titulo")
+        s = QLabel("ESTRUCTURA DE DATOS  ·  RUTAS Y COSTOS 2026")
+        s.setObjectName("subtitulo")
+        left_hd.addWidget(t); left_hd.addWidget(s)
+        hl.addLayout(left_hd); hl.addStretch()
+
+        # Chips de info
+        chip_row = QHBoxLayout(); chip_row.setSpacing(8)
+        for txt in ["7 nodos", "7 aristas", "ADO 2026"]:
+            c = QLabel(txt); c.setObjectName("chip")
+            chip_row.addWidget(c)
+        hl.addLayout(chip_row)
+        main_lay.addWidget(header)
+
+        # ── Separador ──
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("background:#1e3a3a; max-height:1px;")
+        main_lay.addWidget(sep)
+
+        # ── Contenido principal (splitter) ──
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(1)
+
+        # Panel izquierdo: grafo + botones
+        left_panel = QFrame(); left_panel.setObjectName("card")
+        lp_lay = QVBoxLayout(left_panel)
+        lp_lay.setContentsMargins(14,14,14,14); lp_lay.setSpacing(12)
+
+        sec1 = QLabel("VISUALIZACIÓN DEL GRAFO"); sec1.setObjectName("seccion")
+        lp_lay.addWidget(sec1)
+
+        self.grafo_widget = GrafoWidget()
+        self.grafo_widget.nodo_clicked.connect(self.on_nodo_click)
+        lp_lay.addWidget(self.grafo_widget, stretch=1)
+
+        # Botones
+        btn_row = QHBoxLayout(); btn_row.setSpacing(10)
+        self.btn_a = QPushButton("Inciso A — Sin repetir")
+        self.btn_b = QPushButton("Inciso B — Con repetición")
+        self.btn_b.setObjectName("btn_amber")
+        self.btn_reset = QPushButton("Limpiar")
+        self.btn_reset.setObjectName("btn_reset")
+
+        self.btn_a.clicked.connect(lambda: self.calcular("a"))
+        self.btn_b.clicked.connect(lambda: self.calcular("b"))
+        self.btn_reset.clicked.connect(self.reset)
+
+        btn_row.addWidget(self.btn_a)
+        btn_row.addWidget(self.btn_b)
+        btn_row.addWidget(self.btn_reset)
+        lp_lay.addLayout(btn_row)
+
+        # Panel derecho: info + output
+        right_panel = QWidget()
+        rp_lay = QVBoxLayout(right_panel)
+        rp_lay.setContentsMargins(0,0,0,0); rp_lay.setSpacing(12)
+
+        # Stats cards
+        stats_frame = QFrame(); stats_frame.setObjectName("card")
+        sf_lay = QHBoxLayout(stats_frame)
+        sf_lay.setContentsMargins(16,12,16,12); sf_lay.setSpacing(0)
+
+        self.stat_widgets = {}
+        stats = [
+            ("costo_a", "$—", "INCISO A (MXN)"),
+            ("costo_b", "$—", "INCISO B (MXN)"),
+            ("diff",    "—",  "DIFERENCIA (MXN)"),
+            ("pasos_b", "—",  "PASOS INCISO B"),
+        ]
+        for i, (key, val, lbl) in enumerate(stats):
+            if i > 0:
+                div = QFrame(); div.setFrameShape(QFrame.VLine)
+                div.setStyleSheet("background:#1e3a3a; max-width:1px;")
+                sf_lay.addWidget(div)
+            col = QVBoxLayout(); col.setSpacing(2); col.setAlignment(Qt.AlignCenter)
+            vl = QLabel(val); vl.setObjectName("stat_val"); vl.setAlignment(Qt.AlignCenter)
+            ll = QLabel(lbl); ll.setObjectName("stat_lbl"); ll.setAlignment(Qt.AlignCenter)
+            col.addWidget(vl); col.addWidget(ll)
+            sf_lay.addLayout(col)
+            self.stat_widgets[key] = vl
+
+        rp_lay.addWidget(stats_frame)
+
+        # Info de nodo seleccionado
+        self.nodo_frame = QFrame(); self.nodo_frame.setObjectName("card")
+        nf_lay = QHBoxLayout(self.nodo_frame)
+        nf_lay.setContentsMargins(14,10,14,10); nf_lay.setSpacing(14)
+        self.nodo_label = QLabel("Haz clic en un nodo del grafo para ver su información")
+        self.nodo_label.setStyleSheet("color:#546e7a; font-size:12px;")
+        self.nodo_label.setWordWrap(True)
+        nf_lay.addWidget(self.nodo_label)
+        rp_lay.addWidget(self.nodo_frame)
+
+        # Output de texto
+        out_frame = QFrame(); out_frame.setObjectName("card")
+        of_lay = QVBoxLayout(out_frame)
+        of_lay.setContentsMargins(14,12,14,12); of_lay.setSpacing(8)
+        sec2 = QLabel("RESULTADO DEL RECORRIDO"); sec2.setObjectName("seccion")
+        of_lay.addWidget(sec2)
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setPlaceholderText(
+            "Presiona  'Inciso A'  o  'Inciso B'  para calcular la ruta óptima..."
+        )
+        of_lay.addWidget(self.output, stretch=1)
+        rp_lay.addWidget(out_frame, stretch=1)
+
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setSizes([520, 520])
+
+        main_lay.addWidget(splitter, stretch=1)
+
+        # Tabla de conexiones al fondo
+        conn_frame = QFrame(); conn_frame.setObjectName("card")
+        cf_lay = QVBoxLayout(conn_frame)
+        cf_lay.setContentsMargins(14,10,14,10); cf_lay.setSpacing(6)
+        sec3 = QLabel("CONEXIONES DEL GRAFO"); sec3.setObjectName("seccion")
+        cf_lay.addWidget(sec3)
+        tabla = self._build_tabla()
+        cf_lay.addWidget(tabla)
+        main_lay.addWidget(conn_frame)
+
+    # ── Tabla de conexiones ──
+    def _build_tabla(self):
+        w = QWidget()
+        g = QGridLayout(w); g.setContentsMargins(0,0,0,0); g.setSpacing(6)
+        headers = ["Ruta", "Capital origen", "Capital destino", "Costo MXN", "Distancia", "Tiempo"]
+        for col, h in enumerate(headers):
+            lbl = QLabel(h)
+            lbl.setStyleSheet("color:#546e7a; font-size:10px; font-weight:600; letter-spacing:1px;")
+            g.addWidget(lbl, 0, col)
+
+        for row, (o, d, c, km, t) in enumerate(CONEXIONES, start=1):
+            items = [
+                f"{o} ↔ {d}",
+                ESTADOS[o][0],
+                ESTADOS[d][0],
+                f"${c:,}",
+                f"{km} km",
+                t,
+            ]
+            for col, txt in enumerate(items):
+                lbl = QLabel(txt)
+                color = "#1de9b6" if col == 3 else "#b2dfdb"
+                lbl.setStyleSheet(f"color:{color}; font-family:'Consolas'; font-size:11px;")
+                g.addWidget(lbl, row, col)
+        return w
+
+    # ── Lógica de botones ──
+    def calcular(self, modo):
+        if self.worker and self.worker.isRunning(): return
+        self.btn_a.setEnabled(False); self.btn_b.setEnabled(False)
+        txt = "Calculando ruta A..." if modo=="a" else "Calculando ruta B (con repetición)..."
+        self.output.setPlainText(txt)
+        self.worker = Worker(modo, self.grafo)
+        self.worker.result.connect(self.on_result)
+        self.worker.start()
+
+    def on_result(self, modo, ruta, costo):
+        self.btn_a.setEnabled(True); self.btn_b.setEnabled(True)
+        if modo == "a":
+            self.ruta_a = ruta; self.costo_a = costo
+            self.stat_widgets["costo_a"].setText(f"${costo:,}")
+            texto = self._formato_ruta(ruta, costo, "A — Sin repetir nodos")
+        else:
+            self.ruta_b = ruta; self.costo_b = costo
+            self.stat_widgets["costo_b"].setText(f"${costo:,}")
+            self.stat_widgets["pasos_b"].setText(str(len(ruta)))
+            texto = self._formato_ruta(ruta, costo, "B — Repitiendo TAB (Villahermosa)")
+
+        if self.costo_a is not None and self.costo_b is not None:
+            diff = self.costo_b - self.costo_a
+            self.stat_widgets["diff"].setText(f"${diff:,}")
+
+        self.output.setPlainText(texto)
+        self.grafo_widget.set_ruta(ruta)
+
+    def _formato_ruta(self, ruta, costo, titulo):
+        W = 56
+        lines = []
+        lines.append("═" * W)
+        lines.append(f"  INCISO {titulo}")
+        lines.append("═" * W)
+        lines.append("")
+
+        vistos = []
+        for i, nodo in enumerate(ruta):
+            cap, est = ESTADOS[nodo]
+            rep = "  ← REPETIDO" if nodo in vistos else ""
+            if i == 0:
+                lines.append(f"  INICIO  [{nodo}]  {cap} — {est}")
+            else:
+                pn = ruta[i-1]
+                c  = self.grafo[pn][nodo]["costo"]
+                km = self.grafo[pn][nodo]["km"]
+                lines.append(f"          │  ${c:,} MXN  ({km} km)")
+                fin = "[FIN]  " if i == len(ruta)-1 else "       "
+                lines.append(f"  {fin}  [{nodo}]  {cap} — {est}{rep}")
+            vistos.append(nodo)
+
+        repetidos = [n for j,n in enumerate(ruta) if ruta[:j].count(n)>0]
+        lines.append("")
+        lines.append("─" * W)
+        lines.append(f"  Pasos totales            : {len(ruta)}")
+        lines.append(f"  Estados únicos visitados : {len(set(ruta))} / 7")
+        if repetidos:
+            noms = ", ".join(f"{r} ({ESTADOS[r][0]})" for r in dict.fromkeys(repetidos))
+            lines.append(f"  Nodo(s) repetido(s)      : {noms}")
+        lines.append("─" * W)
+        lines.append(f"  COSTO TOTAL              : ${costo:,} MXN")
+        lines.append("═" * W)
+        return "\n".join(lines)
+
+    def on_nodo_click(self, key):
+        cap, est = ESTADOS[key]
+        vecinos = self.grafo[key]
+        partes = [f"<b style='color:#1de9b6'>[{key}]</b>  {cap} — {est}"]
+        conex = []
+        for v, d in vecinos.items():
+            vc, ve = ESTADOS[v]
+            conex.append(f"  → {v} ({vc}): <b>${d['costo']:,}</b> MXN · {d['km']} km")
+        partes.append("<br>".join(conex))
+        self.nodo_label.setText("  |  ".join(partes))
+        self.nodo_label.setStyleSheet("color:#b2dfdb; font-size:12px; font-family:'Consolas';")
+
+    def reset(self):
+        self.ruta_a = self.costo_a = None
+        self.ruta_b = self.costo_b = None
+        self.grafo_widget.set_ruta([])
+        self.output.clear()
+        for lbl in self.stat_widgets.values():
+            lbl.setText("$—" if "$" in lbl.text() or lbl.text()=="$—" else "—")
+            lbl.setText("—")
+        self.nodo_label.setText("Haz clic en un nodo del grafo para ver su información")
+        self.nodo_label.setStyleSheet("color:#546e7a; font-size:12px;")
+
+# ─── ENTRY POINT ─────────────────────────────────────────────────────────────
+
+def main():
+    app = QApplication(sys.argv)
+    app.setStyleSheet(QSS)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
