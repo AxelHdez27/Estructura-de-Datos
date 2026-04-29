@@ -1,0 +1,184 @@
+"""
+Menú de algoritmos de ordenamiento
+Métodos: Radix Sort, Heap Sort, Quick Sort, Shell Sort
+"""
+
+from __future__ import annotations
+from random import randrange, randint
+
+# ──────────────────────────────────────────
+# ALGORITMOS
+# ──────────────────────────────────────────
+
+RADIX = 10
+
+def radix_sort(list_of_ints: list[int]) -> list[int]:
+    if not list_of_ints:
+        return list_of_ints
+    placement = 1
+    max_digit = max(list_of_ints)
+    while placement <= max_digit:
+        buckets: list[list] = [[] for _ in range(RADIX)]
+        for i in list_of_ints:
+            tmp = int((i / placement) % RADIX)
+            buckets[tmp].append(i)
+        a = 0
+        for b in range(RADIX):
+            for i in buckets[b]:
+                list_of_ints[a] = i
+                a += 1
+        placement *= RADIX
+    return list_of_ints
+
+
+def heapify(unsorted: list[int], index: int, heap_size: int) -> None:
+    largest = index
+    left_index  = 2 * index + 1
+    right_index = 2 * index + 2
+    if left_index  < heap_size and unsorted[left_index]  > unsorted[largest]:
+        largest = left_index
+    if right_index < heap_size and unsorted[right_index] > unsorted[largest]:
+        largest = right_index
+    if largest != index:
+        unsorted[largest], unsorted[index] = unsorted[index], unsorted[largest]
+        heapify(unsorted, largest, heap_size)
+
+def heap_sort(unsorted: list[int]) -> list[int]:
+    n = len(unsorted)
+    for i in range(n // 2 - 1, -1, -1):
+        heapify(unsorted, i, n)
+    for i in range(n - 1, 0, -1):
+        unsorted[0], unsorted[i] = unsorted[i], unsorted[0]
+        heapify(unsorted, 0, i)
+    return unsorted
+
+
+def quick_sort(collection: list) -> list:
+    if len(collection) < 2:
+        return collection
+    pivot_index = randrange(len(collection))
+    pivot = collection.pop(pivot_index)
+    lesser  = [item for item in collection if item <= pivot]
+    greater = [item for item in collection if item >  pivot]
+    return [*quick_sort(lesser), pivot, *quick_sort(greater)]
+
+
+def shell_sort(collection: list[int]) -> list[int]:
+    gaps = [701, 301, 132, 57, 23, 10, 4, 1]
+    for gap in gaps:
+        for i in range(gap, len(collection)):
+            insert_value = collection[i]
+            j = i
+            while j >= gap and collection[j - gap] > insert_value:
+                collection[j] = collection[j - gap]
+                j -= gap
+            if j != i:
+                collection[j] = insert_value
+    return collection
+
+
+# ──────────────────────────────────────────
+# HELPERS DE ENTRADA
+# ──────────────────────────────────────────
+
+def pedir_numeros(cantidad: int, solo_positivos: bool = False) -> list[int]:
+    """Pide 'cantidad' números al usuario separados por comas."""
+    while True:
+        raw = input(f"  Ingresa {cantidad} número(s) separados por comas: ").strip()
+        partes = [p.strip() for p in raw.split(",") if p.strip()]
+        try:
+            nums = [int(p) for p in partes]
+        except ValueError:
+            print("  ✗ Solo se permiten números enteros. Intenta de nuevo.\n")
+            continue
+        if len(nums) != cantidad:
+            print(f"  ✗ Se esperaban {cantidad} número(s) pero ingresaste {len(nums)}. Intenta de nuevo.\n")
+            continue
+        if solo_positivos and any(n < 0 for n in nums):
+            print("  ✗ Radix Sort solo acepta enteros no negativos. Intenta de nuevo.\n")
+            continue
+        return nums
+
+
+def pedir_cantidad() -> int:
+    while True:
+        raw = input("  ¿Cuántos números deseas ordenar? ").strip()
+        try:
+            n = int(raw)
+            if n < 1:
+                raise ValueError
+            return n
+        except ValueError:
+            print("  ✗ Ingresa un entero positivo.\n")
+
+
+# ──────────────────────────────────────────
+# MENÚ PRINCIPAL
+# ──────────────────────────────────────────
+
+MENU = """
+╔════════════════════════════════════════╗
+║     MENÚ DE ORDENAMIENTO               ║
+╠════════════════════════════════════════╣
+║  1. Radix Sort                         ║
+║  2. Heap Sort                          ║
+║  3. Quick Sort                         ║
+║  4. Shell Sort                         ║
+║  5. Salir                              ║
+╚════════════════════════════════════════╝"""
+
+
+def ejecutar_radix() -> None:
+    print("\n── Radix Sort ──")
+    print("  a) Ingresar números manualmente")
+    print("  b) Generar números aleatorios (0 – 10 000)")
+    opcion = input("  Elige una opción (a/b): ").strip().lower()
+
+    if opcion == "b":
+        cantidad = pedir_cantidad()
+        nums = [randint(0, 10_000) for _ in range(cantidad)]
+        print(f"  Números generados: {nums}")
+    else:
+        cantidad = pedir_cantidad()
+        nums = pedir_numeros(cantidad, solo_positivos=True)
+
+    resultado = radix_sort(nums[:])          # copia para no modificar el original
+    print(f"\n  Original : {nums}")
+    print(f"  Ordenado : {resultado}")
+
+
+def ejecutar_metodo(nombre: str, funcion) -> None:
+    print(f"\n── {nombre} ──")
+    cantidad = pedir_cantidad()
+    nums = pedir_numeros(cantidad)
+    resultado = funcion(nums[:])
+    print(f"\n  Original : {nums}")
+    print(f"  Ordenado : {resultado}")
+
+
+def main() -> None:
+    print("\n¡Bienvenido al programa de ordenamiento!")
+
+    while True:
+        print(MENU)
+        opcion = input("Selecciona una opción (1-5): ").strip()
+
+        if opcion == "1":
+            ejecutar_radix()
+        elif opcion == "2":
+            ejecutar_metodo("Heap Sort", heap_sort)
+        elif opcion == "3":
+            ejecutar_metodo("Quick Sort", quick_sort)
+        elif opcion == "4":
+            ejecutar_metodo("Shell Sort", shell_sort)
+        elif opcion == "5":
+            print("\n¡Hasta luego! \n")
+            break
+        else:
+            print("\n   Opción no válida, elige entre 1 y 5.")
+
+        input("\nPresiona Enter para continuar...")
+
+
+if __name__ == "__main__":
+    main()
