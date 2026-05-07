@@ -1,90 +1,235 @@
 # =============================================================
 #  MÉTODOS DE ORDENAMIENTO EXTERNO EN PYTHON
+#  Soporta archivos: TXT, Excel (.xlsx), JSON
+#  Incluye explorador visual de archivos (tkinter)
+#
 #  Ejercicio 1: Intercalación
 #  Ejercicio 2: Mezcla Directa
 #  Ejercicio 3: Mezcla Equilibrada
-#
-#  Interfaz interactiva con menú en bucle.
-#  El programa solo termina cuando el usuario elige "Salir".
 # =============================================================
 import os
-import math
+import json
+
+# ── Librerías opcionales ─────────────────────────────────────
+try:
+    import openpyxl
+    EXCEL_DISPONIBLE = True
+except ImportError:
+    EXCEL_DISPONIBLE = False
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    TKINTER_DISPONIBLE = True
+except ImportError:
+    TKINTER_DISPONIBLE = False
 
 
-# ─────────────────────────────────────────────────────────────
-# EJERCICIO 1: INTERCALACIÓN (Merge of Two Sorted Halves)
-#
-# Divide la lista en dos mitades ya ordenadas y las fusiona
-# en una sola lista ordenada mediante comparaciones elemento
-# a elemento. Es la base del algoritmo Merge Sort.
-#
-# Complejidad: O(n log n) | Estable: Sí | Requiere O(n) extra
-# ─────────────────────────────────────────────────────────────
+# =============================================================
+# LECTURA DE ARCHIVOS (TXT, EXCEL, JSON)
+# =============================================================
+
+def leer_txt(ruta):
+    """Lee números de un archivo .txt (separados por coma, espacio o línea)."""
+    with open(ruta, "r", encoding="utf-8") as f:
+        contenido = f.read()
+    tokens = contenido.replace(",", " ").replace("\n", " ").split()
+    if not tokens:
+        raise ValueError(f"El archivo '{ruta}' está vacío.")
+    numeros = []
+    for tok in tokens:
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            num = float(tok)
+            numeros.append(int(num) if num == int(num) else num)
+        except ValueError:
+            raise ValueError(f"Valor no numérico en TXT: '{tok}'")
+    return numeros
+
+
+def leer_excel(ruta):
+    """
+    Lee números de un archivo Excel (.xlsx).
+    Recorre TODAS las hojas y TODAS las celdas con valores numéricos.
+    """
+    if not EXCEL_DISPONIBLE:
+        raise ImportError("Instala openpyxl:  pip install openpyxl")
+    wb = openpyxl.load_workbook(ruta, data_only=True)
+    numeros = []
+    for nombre_hoja in wb.sheetnames:
+        hoja = wb[nombre_hoja]
+        for fila in hoja.iter_rows(values_only=True):
+            for celda in fila:
+                if isinstance(celda, (int, float)) and celda is not None:
+                    numeros.append(int(celda) if celda == int(celda) else celda)
+    if not numeros:
+        raise ValueError(f"No se encontraron números en '{ruta}'.")
+    return numeros
+
+
+def leer_json(ruta):
+    """
+    Lee números de un archivo .json.
+    Soporta dos formatos:
+      - Lista simple:        [10, 5, 8, 3]
+      - Con clave numeros:   {"numeros": [10, 5, 8, 3]}
+      - Cualquier lista dentro del JSON que contenga números
+    """
+    with open(ruta, "r", encoding="utf-8") as f:
+        datos = json.load(f)
+
+    def extraer_numeros(obj):
+        encontrados = []
+        if isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, (int, float)):
+                    encontrados.append(int(item) if item == int(item) else item)
+                elif isinstance(item, (list, dict)):
+                    encontrados.extend(extraer_numeros(item))
+        elif isinstance(obj, dict):
+            for val in obj.values():
+                encontrados.extend(extraer_numeros(val))
+        return encontrados
+
+    numeros = extraer_numeros(datos)
+    if not numeros:
+        raise ValueError(f"No se encontraron números en '{ruta}'.")
+    return numeros
+
+
+def leer_archivo(ruta):
+    """Detecta el tipo de archivo por extensión y llama al lector correcto."""
+    ext = os.path.splitext(ruta)[1].lower()
+    if ext == ".txt":
+        return leer_txt(ruta), "TXT"
+    elif ext in (".xlsx", ".xls"):
+        return leer_excel(ruta), "Excel"
+    elif ext == ".json":
+        return leer_json(ruta), "JSON"
+    else:
+        raise ValueError(f"Formato no soportado: '{ext}'. Usa .txt, .xlsx o .json")
+
+
+# =============================================================
+# ESCRITURA DE ARCHIVO DE SALIDA
+# =============================================================
+
+def escribir_resultado(ruta, numeros, metodo, arch1, arch2, tipo1, tipo2):
+    """Escribe los números ordenados en un archivo .txt con encabezado."""
+    with open(ruta, "w", encoding="utf-8") as f:
+        f.write("=" * 55 + "\n")
+        f.write("  RESULTADO DE ORDENAMIENTO EXTERNO\n")
+        f.write("=" * 55 + "\n")
+        f.write(f"  Metodo        : {metodo}\n")
+        f.write(f"  Archivo 1     : {arch1}  [{tipo1}]\n")
+        f.write(f"  Archivo 2     : {arch2}  [{tipo2}]\n")
+        f.write(f"  Total numeros : {len(numeros)}\n")
+        f.write("=" * 55 + "\n\n")
+        f.write("Numeros ordenados (uno por linea):\n")
+        f.write("-" * 30 + "\n")
+        for num in numeros:
+            f.write(f"{num}\n")
+        f.write("-" * 30 + "\n\n")
+        f.write("Numeros en una sola linea:\n")
+        f.write(", ".join(str(n) for n in numeros) + "\n")
+
+
+# =============================================================
+# EXPLORADOR VISUAL DE ARCHIVOS (tkinter)
+# =============================================================
+
+def abrir_explorador(numero):
+    """
+    Abre el explorador de archivos nativo del sistema operativo
+    para que el usuario seleccione un archivo visualmente.
+    Filtra por TXT, Excel y JSON.
+    """
+    if not TKINTER_DISPONIBLE:
+        return None
+
+    root = tk.Tk()
+    root.withdraw()           # Oculta la ventana principal de tkinter
+    root.attributes('-topmost', True)  # Aparece encima de otras ventanas
+
+    ruta = filedialog.askopenfilename(
+        title=f"Selecciona el Archivo {numero}",
+        filetypes=[
+            ("Todos los soportados", "*.txt *.xlsx *.xls *.json"),
+            ("Archivos de texto",    "*.txt"),
+            ("Archivos Excel",       "*.xlsx *.xls"),
+            ("Archivos JSON",        "*.json"),
+            ("Todos los archivos",   "*.*"),
+        ]
+    )
+    root.destroy()
+    return ruta if ruta else None
+
+
+def abrir_explorador_guardar():
+    """Abre el explorador para elegir dónde guardar el archivo de salida."""
+    if not TKINTER_DISPONIBLE:
+        return None
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+
+    ruta = filedialog.asksaveasfilename(
+        title="Guardar archivo ordenado como...",
+        defaultextension=".txt",
+        filetypes=[("Archivo de texto", "*.txt")]
+    )
+    root.destroy()
+    return ruta if ruta else None
+
+
+# =============================================================
+# ALGORITMOS DE ORDENAMIENTO
+# =============================================================
 
 def intercalar(izq, der):
-    """Fusiona dos listas ordenadas en una sola lista ordenada."""
     resultado = []
     i = j = 0
     while i < len(izq) and j < len(der):
         if izq[i] <= der[j]:
-            resultado.append(izq[i])
-            i += 1
+            resultado.append(izq[i]); i += 1
         else:
-            resultado.append(der[j])
-            j += 1
+            resultado.append(der[j]); j += 1
     resultado.extend(izq[i:])
     resultado.extend(der[j:])
     return resultado
 
 
 def ordenar_intercalacion(lista):
-    """
-    Ordena una lista usando Intercalación (Merge Sort recursivo).
-    Divide la lista a la mitad e intercala las partes ordenadas.
-    """
+    """Intercalación — Merge Sort recursivo. O(n log n)."""
     if len(lista) <= 1:
         return lista
     medio = len(lista) // 2
-    izquierda = ordenar_intercalacion(lista[:medio])
-    derecha   = ordenar_intercalacion(lista[medio:])
-    return intercalar(izquierda, derecha)
+    return intercalar(
+        ordenar_intercalacion(lista[:medio]),
+        ordenar_intercalacion(lista[medio:])
+    )
 
-
-# ─────────────────────────────────────────────────────────────
-# EJERCICIO 2: MEZCLA DIRECTA (Straight Merge Sort)
-#
-# Ordena "passes" iterativas: en cada pasada mezcla runs de
-# tamaño creciente (1, 2, 4, 8, …) hasta que toda la lista
-# quede ordenada. Opera de forma iterativa (sin recursión).
-#
-# Complejidad: O(n log n) | Estable: Sí | In-place simulado
-# ─────────────────────────────────────────────────────────────
 
 def mezclar_runs(lista, inicio, medio, fin):
-    """Mezcla dos segmentos adyacentes ya ordenados."""
     izq = lista[inicio:medio]
     der = lista[medio:fin]
-    i = j = 0
-    k = inicio
+    i = j = 0; k = inicio
     while i < len(izq) and j < len(der):
         if izq[i] <= der[j]:
             lista[k] = izq[i]; i += 1
         else:
             lista[k] = der[j]; j += 1
         k += 1
-    while i < len(izq):
-        lista[k] = izq[i]; i += 1; k += 1
-    while j < len(der):
-        lista[k] = der[j]; j += 1; k += 1
+    while i < len(izq): lista[k] = izq[i]; i += 1; k += 1
+    while j < len(der):  lista[k] = der[j]; j += 1; k += 1
 
 
 def ordenar_mezcla_directa(lista):
-    """
-    Ordena una lista usando Mezcla Directa (iterativa).
-    Mezcla runs de tamaño 1 → 2 → 4 → 8 … hasta terminar.
-    """
-    n = len(lista)
-    tam = 1  # Tamaño inicial del run
+    """Mezcla Directa — iterativa, runs 1→2→4→8… O(n log n)."""
+    n = len(lista); tam = 1
     while tam < n:
         for inicio in range(0, n, tam * 2):
             medio = min(inicio + tam, n)
@@ -95,151 +240,263 @@ def ordenar_mezcla_directa(lista):
     return lista
 
 
-# ─────────────────────────────────────────────────────────────
-# EJERCICIO 3: MEZCLA EQUILIBRADA (Balanced Merge Sort)
-#
-# Distribuye los elementos en múltiples "cintas" (listas) de
-# forma equilibrada y luego los mezcla. Simula el proceso
-# clásico de ordenamiento externo en cinta magnética con
-# k vías (aquí usamos k=2 cintas de salida por defecto).
-#
-# Complejidad: O(n log n) | Estable: Sí | Simula almacenamiento externo
-# ─────────────────────────────────────────────────────────────
-
 def ordenar_mezcla_equilibrada(lista, k=2):
-    """
-    Ordena una lista usando Mezcla Equilibrada con k cintas.
-    Distribuye runs en k cintas y los mezcla iterativamente.
-
-    Args:
-        lista (list): Lista de elementos a ordenar.
-        k (int):      Número de cintas (vías). Default=2.
-
-    Returns:
-        list: Lista ordenada.
-    """
+    """Mezcla Equilibrada — k cintas ajustables. O(n log_k n)."""
     if len(lista) <= 1:
         return lista[:]
-
-    # Paso 1: Crear runs iniciales de tamaño 1 (cada elemento es un run)
     runs = [[x] for x in lista]
-
-    # Paso 2: Mezclar iterativamente agrupando de k en k runs
     while len(runs) > 1:
         nuevos_runs = []
         for i in range(0, len(runs), k):
             grupo = runs[i:i + k]
-            # Mezcla todos los runs del grupo en uno solo
             mezclado = grupo[0]
             for r in grupo[1:]:
                 mezclado = intercalar(mezclado, r)
             nuevos_runs.append(mezclado)
         runs = nuevos_runs
-
     return runs[0]
 
 
-# ─────────────────────────────────────────────────────────────
+# =============================================================
 # UTILIDADES DE INTERFAZ
-# ─────────────────────────────────────────────────────────────
+# =============================================================
 
-def limpiar_pantalla():
+def limpiar():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def pedir_lista():
-    """Solicita al usuario una lista de números separados por coma."""
+def pedir_ruta(numero):
+    """
+    Permite elegir el archivo de dos formas:
+      E → Explorador visual (abre ventana del sistema)
+      M → Manual (escribe la ruta a mano)
+    """
     while True:
-        entrada = input("  Ingresa los números separados por coma\n  > ").strip()
-        if not entrada:
-            print("  [!] No ingresaste nada. Intenta de nuevo.\n")
-            continue
-        try:
-            numeros = [float(x.strip()) for x in entrada.split(",")]
-            # Convierte a entero si todos son enteros
-            if all(x == int(x) for x in numeros):
-                numeros = [int(x) for x in numeros]
-            return numeros
-        except ValueError:
-            print("  [!] Solo se permiten números. Ejemplo: 45, 12, 88, 3\n")
+        print(f"\n  Archivo {numero} — ¿Cómo quieres buscarlo?")
+        print("    E = Abrir explorador de archivos")
+        print("    M = Escribir la ruta manualmente")
+        modo = input("  Elige (E/M): ").strip().upper()
+
+        if modo == "E":
+            if not TKINTER_DISPONIBLE:
+                print("  [!] tkinter no disponible. Usa modo manual (M).")
+                continue
+            print("  [*] Abriendo explorador...")
+            ruta = abrir_explorador(numero)
+            if not ruta:
+                print("  [!] No seleccionaste ningún archivo.")
+                continue
+            print(f"  [OK] Seleccionado: {ruta}")
+            return ruta
+
+        elif modo == "M":
+            ruta = input(f"  Ruta del archivo {numero}: ").strip().strip('"').strip("'")
+            if not ruta:
+                print("  [!] No ingresaste ninguna ruta."); continue
+            if not os.path.isfile(ruta):
+                print(f"  [!] Archivo no encontrado:\n      {ruta}"); continue
+            ext = os.path.splitext(ruta)[1].lower()
+            if ext not in (".txt", ".xlsx", ".xls", ".json"):
+                print("  [!] Formato no soportado. Usa .txt, .xlsx o .json"); continue
+            return ruta
+        else:
+            print("  [!] Opción inválida. Escribe E o M.")
 
 
-def mostrar_banner():
-    print("=" * 55)
-    print("   MÉTODOS DE ORDENAMIENTO EXTERNO EN PYTHON")
-    print("=" * 55)
-    print("   1. Intercalación")
-    print("   2. Mezcla Directa")
-    print("   3. Mezcla Equilibrada")
-    print("   0. Salir")
-    print("-" * 55)
-
-
-def ejecutar_intercalacion():
-    print("\n  ── INTERCALACIÓN ──")
-    print("  Divide y fusiona mitades ordenadas de forma recursiva.\n")
-    lista = pedir_lista()
-    print(f"\n  Original : {lista}")
-    resultado = ordenar_intercalacion(lista)
-    print(f"  Ordenado : {resultado}")
-    print(f"\n  Mínimo: {resultado[0]}  |  Máximo: {resultado[-1]}")
-
-
-def ejecutar_mezcla_directa():
-    print("\n  ── MEZCLA DIRECTA ──")
-    print("  Mezcla runs de tamaño 1→2→4→8… de forma iterativa.\n")
-    lista = pedir_lista()
-    print(f"\n  Original : {lista}")
-    ordenar_mezcla_directa(lista)
-    print(f"  Ordenado : {lista}")
-    print(f"\n  Mínimo: {lista[0]}  |  Máximo: {lista[-1]}")
-
-
-def ejecutar_mezcla_equilibrada():
-    print("\n  ── MEZCLA EQUILIBRADA ──")
-    print("  Distribuye en cintas y mezcla de k en k runs.\n")
-    lista = pedir_lista()
+def pedir_ruta_salida():
+    """Permite elegir dónde guardar el resultado (explorador o manual)."""
     while True:
-        k_str = input("  ¿Cuántas cintas (k) deseas? [default=2]: ").strip()
+        print("\n  Archivo de salida — ¿Cómo quieres guardarlo?")
+        print("    E = Abrir explorador para guardar")
+        print("    M = Escribir nombre manualmente")
+        modo = input("  Elige (E/M): ").strip().upper()
+
+        if modo == "E":
+            if not TKINTER_DISPONIBLE:
+                print("  [!] tkinter no disponible. Usa modo manual (M).")
+                continue
+            print("  [*] Abriendo explorador...")
+            ruta = abrir_explorador_guardar()
+            if not ruta:
+                print("  [!] No elegiste ninguna ubicación.")
+                continue
+            print(f"  [OK] Se guardará en: {ruta}")
+            return ruta
+
+        elif modo == "M":
+            ruta = input("  Nombre del archivo (ej: resultado.txt): ").strip().strip('"').strip("'")
+            if not ruta:
+                print("  [!] Debes ingresar un nombre."); continue
+            if not ruta.lower().endswith(".txt"):
+                ruta += ".txt"
+            if os.path.isfile(ruta):
+                resp = input(f"  '{ruta}' ya existe. ¿Sobreescribir? (s/n): ").strip().lower()
+                if resp != "s":
+                    continue
+            return ruta
+        else:
+            print("  [!] Opción inválida. Escribe E o M.")
+
+
+def pedir_k():
+    while True:
+        k_str = input("  Número de cintas k [default=2]: ").strip()
         if k_str == "":
-            k = 2; break
+            return 2
         try:
             k = int(k_str)
-            if k >= 2: break
+            if k >= 2: return k
             print("  [!] k debe ser >= 2.")
         except ValueError:
             print("  [!] Ingresa un número entero.")
-    print(f"\n  Original : {lista}")
-    resultado = ordenar_mezcla_equilibrada(lista, k)
-    print(f"  Ordenado : {resultado}")
-    print(f"\n  Cintas usadas: {k}  |  Mínimo: {resultado[0]}  |  Máximo: {resultado[-1]}")
 
 
-# ─────────────────────────────────────────────────────────────
+def crear_archivos_ejemplo():
+    """Crea archivos de ejemplo en los 3 formatos para probar."""
+    resp = input("\n  ¿Crear archivos de ejemplo para probar? (s/n): ").strip().lower()
+    if resp != "s":
+        return
+
+    # TXT
+    with open("ejemplo1.txt", "w") as f:
+        f.write("85, 72, 91, 60, 78\n34, 55, 19\n")
+    with open("ejemplo2.txt", "w") as f:
+        f.write("43, 67, 11, 98\n25, 50, 73, 88\n")
+
+    # JSON
+    with open("ejemplo1.json", "w") as f:
+        json.dump({"numeros": [85, 72, 91, 60, 78, 34, 55, 19]}, f, indent=2)
+    with open("ejemplo2.json", "w") as f:
+        json.dump([43, 67, 11, 98, 25, 50, 73, 88], f, indent=2)
+
+    # Excel
+    if EXCEL_DISPONIBLE:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Numeros"
+        for v in [85, 72, 91, 60, 78, 34, 55, 19]:
+            ws.append([v])
+        wb.save("ejemplo1.xlsx")
+
+        wb2 = openpyxl.Workbook()
+        ws2 = wb2.active
+        ws2.title = "Numeros"
+        for v in [43, 67, 11, 98, 25, 50, 73, 88]:
+            ws2.append([v])
+        wb2.save("ejemplo2.xlsx")
+        print("  [OK] Creados: ejemplo1.txt, ejemplo2.txt")
+        print("  [OK] Creados: ejemplo1.json, ejemplo2.json")
+        print("  [OK] Creados: ejemplo1.xlsx, ejemplo2.xlsx")
+    else:
+        print("  [OK] Creados: ejemplo1.txt, ejemplo2.txt")
+        print("  [OK] Creados: ejemplo1.json, ejemplo2.json")
+        print("  [!] Excel no disponible (instala openpyxl)")
+
+    print(f"  [OK] Carpeta: {os.getcwd()}\n")
+
+
+def mostrar_banner():
+    explorador = "SI" if TKINTER_DISPONIBLE else "NO (instala tkinter)"
+    excel      = "SI" if EXCEL_DISPONIBLE    else "NO (instala openpyxl)"
+    print("=" * 57)
+    print("   ORDENAMIENTO EXTERNO — TXT / EXCEL / JSON")
+    print("=" * 57)
+    print(f"   Explorador visual : {explorador}")
+    print(f"   Soporte Excel     : {excel}")
+    print("-" * 57)
+    print("   1. Intercalación       (Merge Sort recursivo)")
+    print("   2. Mezcla Directa      (Iterativo, runs dobles)")
+    print("   3. Mezcla Equilibrada  (k cintas ajustables)")
+    print("   0. Salir")
+    print("-" * 57)
+
+
+def ejecutar_metodo(nombre_metodo, k=None):
+    """Flujo completo: seleccionar → leer → ordenar → guardar."""
+    print(f"\n{'─'*57}")
+    print(f"  MÉTODO: {nombre_metodo}")
+    print(f"{'─'*57}")
+    print("  Formatos soportados: .txt  |  .xlsx  |  .json\n")
+
+    # ── Seleccionar archivos ──────────────────────────────────
+    ruta1 = pedir_ruta(1)
+    ruta2 = pedir_ruta(2)
+
+    # ── Leer números ─────────────────────────────────────────
+    try:
+        nums1, tipo1 = leer_archivo(ruta1)
+        nums2, tipo2 = leer_archivo(ruta2)
+    except Exception as e:
+        print(f"\n  [ERROR] {e}\n")
+        return
+
+    combinados = nums1 + nums2
+
+    print(f"\n  [{tipo1}] {os.path.basename(ruta1)} → {nums1}")
+    print(f"  [{tipo2}] {os.path.basename(ruta2)} → {nums2}")
+    print(f"\n  Combinados ({len(combinados)} números): {combinados}")
+
+    # ── Ordenar ───────────────────────────────────────────────
+    if nombre_metodo == "Intercalacion":
+        resultado = ordenar_intercalacion(combinados)
+    elif nombre_metodo == "Mezcla Directa":
+        resultado = ordenar_mezcla_directa(combinados)
+    else:
+        resultado = ordenar_mezcla_equilibrada(combinados, k)
+
+    print(f"  Resultado ordenado: {resultado}")
+
+    # ── Guardar ───────────────────────────────────────────────
+    ruta_salida = pedir_ruta_salida()
+    try:
+        escribir_resultado(
+            ruta_salida, resultado, nombre_metodo,
+            os.path.basename(ruta1), os.path.basename(ruta2),
+            tipo1, tipo2
+        )
+        print(f"\n  [OK] Archivo creado : {os.path.abspath(ruta_salida)}")
+        print(f"  [OK] Total ordenados: {len(resultado)} números")
+        if k:
+            print(f"  [OK] Cintas usadas  : {k}")
+    except Exception as e:
+        print(f"\n  [ERROR] No se pudo guardar: {e}")
+
+
+# =============================================================
 # MENÚ PRINCIPAL EN BUCLE
-# ─────────────────────────────────────────────────────────────
+# =============================================================
 
 def main():
-    acciones = {
-        "1": ejecutar_intercalacion,
-        "2": ejecutar_mezcla_directa,
-        "3": ejecutar_mezcla_equilibrada,
-    }
+    limpiar()
+    print("=" * 57)
+    print("   SISTEMA DE ORDENAMIENTO EXTERNO")
+    print("   Soporta: TXT | Excel (.xlsx) | JSON")
+    print("=" * 57)
+    print("  Lee dos archivos, mezcla sus números con el")
+    print("  método elegido y genera un nuevo .txt ordenado.\n")
+    crear_archivos_ejemplo()
+    input("  Presiona ENTER para continuar al menú...")
 
     while True:
-        limpiar_pantalla()
+        limpiar()
         mostrar_banner()
-
         opcion = input("  Selecciona una opción: ").strip()
 
         if opcion == "0":
             print("\n  ¡Hasta luego!\n")
             break
-        elif opcion in acciones:
-            acciones[opcion]()
+        elif opcion == "1":
+            ejecutar_metodo("Intercalacion")
+            input("\n  Presiona ENTER para volver al menú...")
+        elif opcion == "2":
+            ejecutar_metodo("Mezcla Directa")
+            input("\n  Presiona ENTER para volver al menú...")
+        elif opcion == "3":
+            k = pedir_k()
+            ejecutar_metodo("Mezcla Equilibrada", k=k)
             input("\n  Presiona ENTER para volver al menú...")
         else:
-            input("\n  [!] Opción no válida. Presiona ENTER para continuar...")
+            input("\n  [!] Opción inválida. Presiona ENTER para continuar...")
 
 
 if __name__ == "__main__":
