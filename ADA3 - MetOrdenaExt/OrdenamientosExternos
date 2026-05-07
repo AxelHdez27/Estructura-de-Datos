@@ -1,0 +1,246 @@
+# =============================================================
+#  MÉTODOS DE ORDENAMIENTO EXTERNO EN PYTHON
+#  Ejercicio 1: Intercalación
+#  Ejercicio 2: Mezcla Directa
+#  Ejercicio 3: Mezcla Equilibrada
+#
+#  Interfaz interactiva con menú en bucle.
+#  El programa solo termina cuando el usuario elige "Salir".
+# =============================================================
+import os
+import math
+
+
+# ─────────────────────────────────────────────────────────────
+# EJERCICIO 1: INTERCALACIÓN (Merge of Two Sorted Halves)
+#
+# Divide la lista en dos mitades ya ordenadas y las fusiona
+# en una sola lista ordenada mediante comparaciones elemento
+# a elemento. Es la base del algoritmo Merge Sort.
+#
+# Complejidad: O(n log n) | Estable: Sí | Requiere O(n) extra
+# ─────────────────────────────────────────────────────────────
+
+def intercalar(izq, der):
+    """Fusiona dos listas ordenadas en una sola lista ordenada."""
+    resultado = []
+    i = j = 0
+    while i < len(izq) and j < len(der):
+        if izq[i] <= der[j]:
+            resultado.append(izq[i])
+            i += 1
+        else:
+            resultado.append(der[j])
+            j += 1
+    resultado.extend(izq[i:])
+    resultado.extend(der[j:])
+    return resultado
+
+
+def ordenar_intercalacion(lista):
+    """
+    Ordena una lista usando Intercalación (Merge Sort recursivo).
+    Divide la lista a la mitad e intercala las partes ordenadas.
+    """
+    if len(lista) <= 1:
+        return lista
+    medio = len(lista) // 2
+    izquierda = ordenar_intercalacion(lista[:medio])
+    derecha   = ordenar_intercalacion(lista[medio:])
+    return intercalar(izquierda, derecha)
+
+
+# ─────────────────────────────────────────────────────────────
+# EJERCICIO 2: MEZCLA DIRECTA (Straight Merge Sort)
+#
+# Ordena "passes" iterativas: en cada pasada mezcla runs de
+# tamaño creciente (1, 2, 4, 8, …) hasta que toda la lista
+# quede ordenada. Opera de forma iterativa (sin recursión).
+#
+# Complejidad: O(n log n) | Estable: Sí | In-place simulado
+# ─────────────────────────────────────────────────────────────
+
+def mezclar_runs(lista, inicio, medio, fin):
+    """Mezcla dos segmentos adyacentes ya ordenados."""
+    izq = lista[inicio:medio]
+    der = lista[medio:fin]
+    i = j = 0
+    k = inicio
+    while i < len(izq) and j < len(der):
+        if izq[i] <= der[j]:
+            lista[k] = izq[i]; i += 1
+        else:
+            lista[k] = der[j]; j += 1
+        k += 1
+    while i < len(izq):
+        lista[k] = izq[i]; i += 1; k += 1
+    while j < len(der):
+        lista[k] = der[j]; j += 1; k += 1
+
+
+def ordenar_mezcla_directa(lista):
+    """
+    Ordena una lista usando Mezcla Directa (iterativa).
+    Mezcla runs de tamaño 1 → 2 → 4 → 8 … hasta terminar.
+    """
+    n = len(lista)
+    tam = 1  # Tamaño inicial del run
+    while tam < n:
+        for inicio in range(0, n, tam * 2):
+            medio = min(inicio + tam, n)
+            fin   = min(inicio + tam * 2, n)
+            if medio < fin:
+                mezclar_runs(lista, inicio, medio, fin)
+        tam *= 2
+    return lista
+
+
+# ─────────────────────────────────────────────────────────────
+# EJERCICIO 3: MEZCLA EQUILIBRADA (Balanced Merge Sort)
+#
+# Distribuye los elementos en múltiples "cintas" (listas) de
+# forma equilibrada y luego los mezcla. Simula el proceso
+# clásico de ordenamiento externo en cinta magnética con
+# k vías (aquí usamos k=2 cintas de salida por defecto).
+#
+# Complejidad: O(n log n) | Estable: Sí | Simula almacenamiento externo
+# ─────────────────────────────────────────────────────────────
+
+def ordenar_mezcla_equilibrada(lista, k=2):
+    """
+    Ordena una lista usando Mezcla Equilibrada con k cintas.
+    Distribuye runs en k cintas y los mezcla iterativamente.
+
+    Args:
+        lista (list): Lista de elementos a ordenar.
+        k (int):      Número de cintas (vías). Default=2.
+
+    Returns:
+        list: Lista ordenada.
+    """
+    if len(lista) <= 1:
+        return lista[:]
+
+    # Paso 1: Crear runs iniciales de tamaño 1 (cada elemento es un run)
+    runs = [[x] for x in lista]
+
+    # Paso 2: Mezclar iterativamente agrupando de k en k runs
+    while len(runs) > 1:
+        nuevos_runs = []
+        for i in range(0, len(runs), k):
+            grupo = runs[i:i + k]
+            # Mezcla todos los runs del grupo en uno solo
+            mezclado = grupo[0]
+            for r in grupo[1:]:
+                mezclado = intercalar(mezclado, r)
+            nuevos_runs.append(mezclado)
+        runs = nuevos_runs
+
+    return runs[0]
+
+
+# ─────────────────────────────────────────────────────────────
+# UTILIDADES DE INTERFAZ
+# ─────────────────────────────────────────────────────────────
+
+def limpiar_pantalla():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+
+def pedir_lista():
+    """Solicita al usuario una lista de números separados por coma."""
+    while True:
+        entrada = input("  Ingresa los números separados por coma\n  > ").strip()
+        if not entrada:
+            print("  [!] No ingresaste nada. Intenta de nuevo.\n")
+            continue
+        try:
+            numeros = [float(x.strip()) for x in entrada.split(",")]
+            # Convierte a entero si todos son enteros
+            if all(x == int(x) for x in numeros):
+                numeros = [int(x) for x in numeros]
+            return numeros
+        except ValueError:
+            print("  [!] Solo se permiten números. Ejemplo: 45, 12, 88, 3\n")
+
+
+def mostrar_banner():
+    print("=" * 55)
+    print("   MÉTODOS DE ORDENAMIENTO EXTERNO EN PYTHON")
+    print("=" * 55)
+    print("   1. Intercalación")
+    print("   2. Mezcla Directa")
+    print("   3. Mezcla Equilibrada")
+    print("   0. Salir")
+    print("-" * 55)
+
+
+def ejecutar_intercalacion():
+    print("\n  ── INTERCALACIÓN ──")
+    print("  Divide y fusiona mitades ordenadas de forma recursiva.\n")
+    lista = pedir_lista()
+    print(f"\n  Original : {lista}")
+    resultado = ordenar_intercalacion(lista)
+    print(f"  Ordenado : {resultado}")
+    print(f"\n  Mínimo: {resultado[0]}  |  Máximo: {resultado[-1]}")
+
+
+def ejecutar_mezcla_directa():
+    print("\n  ── MEZCLA DIRECTA ──")
+    print("  Mezcla runs de tamaño 1→2→4→8… de forma iterativa.\n")
+    lista = pedir_lista()
+    print(f"\n  Original : {lista}")
+    ordenar_mezcla_directa(lista)
+    print(f"  Ordenado : {lista}")
+    print(f"\n  Mínimo: {lista[0]}  |  Máximo: {lista[-1]}")
+
+
+def ejecutar_mezcla_equilibrada():
+    print("\n  ── MEZCLA EQUILIBRADA ──")
+    print("  Distribuye en cintas y mezcla de k en k runs.\n")
+    lista = pedir_lista()
+    while True:
+        k_str = input("  ¿Cuántas cintas (k) deseas? [default=2]: ").strip()
+        if k_str == "":
+            k = 2; break
+        try:
+            k = int(k_str)
+            if k >= 2: break
+            print("  [!] k debe ser >= 2.")
+        except ValueError:
+            print("  [!] Ingresa un número entero.")
+    print(f"\n  Original : {lista}")
+    resultado = ordenar_mezcla_equilibrada(lista, k)
+    print(f"  Ordenado : {resultado}")
+    print(f"\n  Cintas usadas: {k}  |  Mínimo: {resultado[0]}  |  Máximo: {resultado[-1]}")
+
+
+# ─────────────────────────────────────────────────────────────
+# MENÚ PRINCIPAL EN BUCLE
+# ─────────────────────────────────────────────────────────────
+
+def main():
+    acciones = {
+        "1": ejecutar_intercalacion,
+        "2": ejecutar_mezcla_directa,
+        "3": ejecutar_mezcla_equilibrada,
+    }
+
+    while True:
+        limpiar_pantalla()
+        mostrar_banner()
+
+        opcion = input("  Selecciona una opción: ").strip()
+
+        if opcion == "0":
+            print("\n  ¡Hasta luego!\n")
+            break
+        elif opcion in acciones:
+            acciones[opcion]()
+            input("\n  Presiona ENTER para volver al menú...")
+        else:
+            input("\n  [!] Opción no válida. Presiona ENTER para continuar...")
+
+
+if __name__ == "__main__":
+    main()
