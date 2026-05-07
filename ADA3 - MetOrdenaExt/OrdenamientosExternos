@@ -49,24 +49,68 @@ def leer_txt(ruta):
     return numeros
 
 
-def leer_excel(ruta):
+def mostrar_hojas_excel(ruta):
+    """Muestra las hojas disponibles en un archivo Excel."""
+    if not EXCEL_DISPONIBLE:
+        raise ImportError("Instala openpyxl:  pip install openpyxl")
+    
+    wb = openpyxl.load_workbook(ruta, data_only=True)
+    hojas = wb.sheetnames
+    wb.close()
+    return hojas
+
+
+def leer_excel(ruta, limite_hojas=None):
     """
     Lee números de un archivo Excel (.xlsx).
-    Recorre TODAS las hojas y TODAS las celdas con valores numéricos.
+    
+    Parámetros:
+    - ruta: Ruta del archivo Excel
+    - limite_hojas: 
+        None o "todas" -> Lee TODAS las hojas
+        Número entero -> Lee solo las primeras N hojas
+        Lista -> Lee solo las hojas con esos nombres
     """
     if not EXCEL_DISPONIBLE:
         raise ImportError("Instala openpyxl:  pip install openpyxl")
+    
     wb = openpyxl.load_workbook(ruta, data_only=True)
+    todas_hojas = wb.sheetnames
+    
+    # Determinar qué hojas leer
+    hojas_a_leer = []
+    
+    if limite_hojas is None or limite_hojas == "todas":
+        hojas_a_leer = todas_hojas
+    elif isinstance(limite_hojas, int):
+        hojas_a_leer = todas_hojas[:limite_hojas]
+    elif isinstance(limite_hojas, list):
+        hojas_a_leer = [h for h in limite_hojas if h in todas_hojas]
+    
+    if not hojas_a_leer:
+        wb.close()
+        raise ValueError(f"No se encontraron hojas para leer en '{ruta}'.")
+    
     numeros = []
-    for nombre_hoja in wb.sheetnames:
+    hojas_leidas = []
+    
+    for nombre_hoja in hojas_a_leer:
         hoja = wb[nombre_hoja]
+        numeros_hoja = []
         for fila in hoja.iter_rows(values_only=True):
             for celda in fila:
                 if isinstance(celda, (int, float)) and celda is not None:
-                    numeros.append(int(celda) if celda == int(celda) else celda)
+                    num = int(celda) if celda == int(celda) else celda
+                    numeros.append(num)
+                    numeros_hoja.append(num)
+        hojas_leidas.append((nombre_hoja, len(numeros_hoja)))
+    
+    wb.close()
+    
     if not numeros:
         raise ValueError(f"No se encontraron números en '{ruta}'.")
-    return numeros
+    
+    return numeros, hojas_leidas
 
 
 def leer_json(ruta):
@@ -99,24 +143,107 @@ def leer_json(ruta):
     return numeros
 
 
-def leer_archivo(ruta):
+def leer_archivo(ruta, archivo_numero=1):
     """Detecta el tipo de archivo por extensión y llama al lector correcto."""
     ext = os.path.splitext(ruta)[1].lower()
+    
     if ext == ".txt":
-        return leer_txt(ruta), "TXT"
+        return leer_txt(ruta), "TXT", None
     elif ext in (".xlsx", ".xls"):
-        return leer_excel(ruta), "Excel"
+        # Para Excel, preguntar al usuario qué hojas leer
+        return leer_excel_con_opciones(ruta, archivo_numero)
     elif ext == ".json":
-        return leer_json(ruta), "JSON"
+        return leer_json(ruta), "JSON", None
     else:
         raise ValueError(f"Formato no soportado: '{ext}'. Usa .txt, .xlsx o .json")
+
+
+def leer_excel_con_opciones(ruta, archivo_numero):
+    """Lee Excel permitiendo elegir cuántas hojas leer."""
+    if not EXCEL_DISPONIBLE:
+        raise ImportError("Instala openpyxl:  pip install openpyxl")
+    
+    # Mostrar hojas disponibles
+    hojas = mostrar_hojas_excel(ruta)
+    
+    print(f"\n  Archivo Excel {archivo_numero} tiene {len(hojas)} hoja(s):")
+    for i, hoja in enumerate(hojas, 1):
+        print(f"    {i}. {hoja}")
+    
+    print("\n  Opciones para leer:")
+    print("    1. Leer TODAS las hojas")
+    print("    2. Leer solo las primeras N hojas")
+    print("    3. Leer hojas específicas (por números)")
+    print("    4. Leer hojas específicas (por nombres)")
+    
+    while True:
+        opcion = input("  Elige una opción (1-4): ").strip()
+        
+        if opcion == "1":
+            numeros, hojas_info = leer_excel(ruta, "todas")
+            print(f"\n  [LECTURA] Se leyeron {len(hojas_info)} hoja(s):")
+            for hoja, count in hojas_info:
+                print(f"    - {hoja}: {count} números")
+            return numeros, "Excel", {"hojas": hojas_info}
+        
+        elif opcion == "2":
+            try:
+                n = int(input("  ¿Cuántas primeras hojas quieres leer?: "))
+                if n <= 0:
+                    print("  [!] Debe ser un número positivo.")
+                    continue
+                numeros, hojas_info = leer_excel(ruta, n)
+                print(f"\n  [LECTURA] Se leyeron {len(hojas_info)} hoja(s):")
+                for hoja, count in hojas_info:
+                    print(f"    - {hoja}: {count} números")
+                return numeros, "Excel", {"hojas": hojas_info}
+            except ValueError:
+                print("  [!] Ingresa un número válido.")
+                continue
+        
+        elif opcion == "3":
+            try:
+                indices = input("  Ingresa los números de las hojas (ej: 1,3,5): ").split(',')
+                indices = [int(i.strip()) for i in indices if i.strip().isdigit()]
+                indices = [i for i in indices if 1 <= i <= len(hojas)]
+                if not indices:
+                    print("  [!] Selección inválida.")
+                    continue
+                hojas_seleccionadas = [hojas[i-1] for i in indices]
+                numeros, hojas_info = leer_excel(ruta, hojas_seleccionadas)
+                print(f"\n  [LECTURA] Se leyeron {len(hojas_info)} hoja(s):")
+                for hoja, count in hojas_info:
+                    print(f"    - {hoja}: {count} números")
+                return numeros, "Excel", {"hojas": hojas_info}
+            except ValueError:
+                print("  [!] Formato inválido. Usa números separados por coma.")
+                continue
+        
+        elif opcion == "4":
+            try:
+                nombres = input("  Ingresa los nombres de las hojas (separados por coma): ").split(',')
+                hojas_seleccionadas = [n.strip() for n in nombres if n.strip() in hojas]
+                if not hojas_seleccionadas:
+                    print("  [!] Nombres inválidos o no encontrados.")
+                    continue
+                numeros, hojas_info = leer_excel(ruta, hojas_seleccionadas)
+                print(f"\n  [LECTURA] Se leyeron {len(hojas_info)} hoja(s):")
+                for hoja, count in hojas_info:
+                    print(f"    - {hoja}: {count} números")
+                return numeros, "Excel", {"hojas": hojas_info}
+            except Exception as e:
+                print(f"  [!] Error: {e}")
+                continue
+        
+        else:
+            print("  [!] Opción inválida. Elige 1-4.")
 
 
 # =============================================================
 # ESCRITURA DE ARCHIVO DE SALIDA
 # =============================================================
 
-def escribir_resultado(ruta, numeros, metodo, arch1, arch2, tipo1, tipo2):
+def escribir_resultado(ruta, numeros, metodo, arch1, arch2, tipo1, tipo2, info1=None, info2=None):
     """Escribe los números ordenados en un archivo .txt con encabezado."""
     with open(ruta, "w", encoding="utf-8") as f:
         f.write("=" * 55 + "\n")
@@ -124,7 +251,11 @@ def escribir_resultado(ruta, numeros, metodo, arch1, arch2, tipo1, tipo2):
         f.write("=" * 55 + "\n")
         f.write(f"  Metodo        : {metodo}\n")
         f.write(f"  Archivo 1     : {arch1}  [{tipo1}]\n")
+        if info1 and "hojas" in info1:
+            f.write(f"  Hojas leidas 1: {', '.join([h[0] for h in info1['hojas']])}\n")
         f.write(f"  Archivo 2     : {arch2}  [{tipo2}]\n")
+        if info2 and "hojas" in info2:
+            f.write(f"  Hojas leidas 2: {', '.join([h[0] for h in info2['hojas']])}\n")
         f.write(f"  Total numeros : {len(numeros)}\n")
         f.write("=" * 55 + "\n\n")
         f.write("Numeros ordenados (uno por linea):\n")
@@ -369,24 +500,38 @@ def crear_archivos_ejemplo():
     with open("ejemplo2.json", "w") as f:
         json.dump([43, 67, 11, 98, 25, 50, 73, 88], f, indent=2)
 
-    # Excel
+    # Excel con múltiples hojas
     if EXCEL_DISPONIBLE:
         wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Numeros"
+        # Hoja 1: Numeros A
+        ws1 = wb.active
+        ws1.title = "Numeros_A"
         for v in [85, 72, 91, 60, 78, 34, 55, 19]:
-            ws.append([v])
-        wb.save("ejemplo1.xlsx")
-
-        wb2 = openpyxl.Workbook()
-        ws2 = wb2.active
-        ws2.title = "Numeros"
-        for v in [43, 67, 11, 98, 25, 50, 73, 88]:
+            ws1.append([v])
+        
+        # Hoja 2: Numeros B
+        ws2 = wb.create_sheet("Numeros_B")
+        for v in [10, 20, 30, 40, 50]:
             ws2.append([v])
+        
+        # Hoja 3: Datos
+        ws3 = wb.create_sheet("Datos")
+        for v in [100, 200, 300]:
+            ws3.append([v])
+        
+        wb.save("ejemplo_multiple.xlsx")
+        
+        wb2 = openpyxl.Workbook()
+        ws2_1 = wb2.active
+        ws2_1.title = "Valores"
+        for v in [43, 67, 11, 98, 25, 50, 73, 88]:
+            ws2_1.append([v])
         wb2.save("ejemplo2.xlsx")
+        
         print("  [OK] Creados: ejemplo1.txt, ejemplo2.txt")
         print("  [OK] Creados: ejemplo1.json, ejemplo2.json")
-        print("  [OK] Creados: ejemplo1.xlsx, ejemplo2.xlsx")
+        print("  [OK] Creado:  ejemplo_multiple.xlsx (3 hojas)")
+        print("  [OK] Creado:  ejemplo2.xlsx")
     else:
         print("  [OK] Creados: ejemplo1.txt, ejemplo2.txt")
         print("  [OK] Creados: ejemplo1.json, ejemplo2.json")
@@ -424,8 +569,8 @@ def ejecutar_metodo(nombre_metodo, k=None):
 
     # ── Leer números ─────────────────────────────────────────
     try:
-        nums1, tipo1 = leer_archivo(ruta1)
-        nums2, tipo2 = leer_archivo(ruta2)
+        nums1, tipo1, info1 = leer_archivo(ruta1, archivo_numero=1)
+        nums2, tipo2, info2 = leer_archivo(ruta2, archivo_numero=2)
     except Exception as e:
         print(f"\n  [ERROR] {e}\n")
         return
@@ -452,7 +597,7 @@ def ejecutar_metodo(nombre_metodo, k=None):
         escribir_resultado(
             ruta_salida, resultado, nombre_metodo,
             os.path.basename(ruta1), os.path.basename(ruta2),
-            tipo1, tipo2
+            tipo1, tipo2, info1, info2
         )
         print(f"\n  [OK] Archivo creado : {os.path.abspath(ruta_salida)}")
         print(f"  [OK] Total ordenados: {len(resultado)} números")
