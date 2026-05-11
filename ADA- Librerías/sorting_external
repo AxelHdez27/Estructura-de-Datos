@@ -1,21 +1,109 @@
 """
 LIBRERÍA DE ORDENAMIENTO EXTERNO
-Métodos implementados:
-1. Intercalación (Merge Sort)
-2. Mezcla Directa (Bottom-Up Merge Sort)
-3. Mezcla Equilibrada (Balanced Multi-way Merge)
+Métodos: Intercalación, Mezcla Directa, Mezcla Equilibrada
+Soporta: 2 archivos (TXT, JSON, Excel .xlsx)
 """
 
-from typing import List, Union
+import os
+import json
 
-Number = Union[int, float]
+try:
+    import openpyxl
+    EXCEL_DISPONIBLE = True
+except ImportError:
+    EXCEL_DISPONIBLE = False
 
 
-def intercalar(izq: List[Number], der: List[Number]) -> List[Number]:
-    """
-    Fusiona dos listas ordenadas en una sola
-    Función auxiliar para los métodos de mezcla
-    """
+# =============================================================
+# FUNCIONES DE LECTURA DE ARCHIVOS
+# =============================================================
+
+def leer_txt(ruta):
+    """Lee números de un archivo TXT"""
+    with open(ruta, 'r', encoding='utf-8') as f:
+        contenido = f.read()
+    
+    tokens = contenido.replace(',', ' ').replace('\n', ' ').split()
+    numeros = []
+    
+    for token in tokens:
+        try:
+            num = float(token)
+            numeros.append(int(num) if num == int(num) else num)
+        except ValueError:
+            print(f"    [!] Advertencia: '{token}' no es número, se omite")
+    
+    if not numeros:
+        raise ValueError("No se encontraron números en el archivo")
+    return numeros
+
+
+def leer_json(ruta):
+    """Lee números de un archivo JSON"""
+    with open(ruta, 'r', encoding='utf-8') as f:
+        datos = json.load(f)
+    
+    numeros = []
+    
+    def extraer(obj):
+        if isinstance(obj, (int, float)):
+            numeros.append(int(obj) if obj == int(obj) else obj)
+        elif isinstance(obj, list):
+            for item in obj:
+                extraer(item)
+        elif isinstance(obj, dict):
+            for valor in obj.values():
+                extraer(valor)
+    
+    extraer(datos)
+    
+    if not numeros:
+        raise ValueError("No se encontraron números en el JSON")
+    return numeros
+
+
+def leer_excel(ruta):
+    """Lee números de un archivo Excel"""
+    if not EXCEL_DISPONIBLE:
+        raise ImportError("Instala openpyxl: pip install openpyxl")
+    
+    wb = openpyxl.load_workbook(ruta, data_only=True)
+    numeros = []
+    
+    for nombre_hoja in wb.sheetnames:
+        hoja = wb[nombre_hoja]
+        for fila in hoja.iter_rows(values_only=True):
+            for celda in fila:
+                if isinstance(celda, (int, float)) and celda is not None:
+                    num = int(celda) if celda == int(celda) else celda
+                    numeros.append(num)
+    wb.close()
+    
+    if not numeros:
+        raise ValueError("No se encontraron números en el Excel")
+    return numeros
+
+
+def leer_archivo(ruta):
+    """Detecta el tipo de archivo y lee los números"""
+    ext = os.path.splitext(ruta)[1].lower()
+    
+    if ext == '.txt':
+        return leer_txt(ruta)
+    elif ext == '.json':
+        return leer_json(ruta)
+    elif ext in ('.xlsx', '.xls'):
+        return leer_excel(ruta)
+    else:
+        raise ValueError(f"Formato no soportado: {ext}. Usa .txt, .json o .xlsx")
+
+
+# =============================================================
+# MÉTODOS DE ORDENAMIENTO EXTERNO
+# =============================================================
+
+def intercalar(izq, der):
+    """Función auxiliar para mezclar dos listas ordenadas"""
     resultado = []
     i = j = 0
     while i < len(izq) and j < len(der):
@@ -30,66 +118,52 @@ def intercalar(izq: List[Number], der: List[Number]) -> List[Number]:
     return resultado
 
 
-def ordenar_intercalacion(lista: List[Number]) -> List[Number]:
+def ordenar_intercalacion(lista):
     """
-    INTERCALACIÓN (Merge Sort recursivo)
+    Intercalación (Merge Sort recursivo)
     Complejidad: O(n log n)
-    
-    Concepto: Divide la lista en mitades recursivamente,
-    ordena cada mitad y luego las fusiona (intercala).
-    
-    Uso típico en ordenamiento externo cuando los datos
-    no caben en memoria RAM.
     """
     if len(lista) <= 1:
         return lista[:]
     medio = len(lista) // 2
-    return intercalar(
-        ordenar_intercalacion(lista[:medio]),
-        ordenar_intercalacion(lista[medio:])
-    )
+    izquierda = ordenar_intercalacion(lista[:medio])
+    derecha = ordenar_intercalacion(lista[medio:])
+    return intercalar(izquierda, derecha)
 
 
-def mezclar_runs(lista: List[Number], inicio: int, medio: int, fin: int) -> None:
-    """
-    Función auxiliar para Mezcla Directa
-    Fusiona dos subarreglos ordenados dentro de la misma lista
-    """
-    izq = lista[inicio:medio]
-    der = lista[medio:fin]
+def mezclar_runs(lista, inicio, medio, fin):
+    """Función auxiliar para mezcla directa"""
+    izquierda = lista[inicio:medio]
+    derecha = lista[medio:fin]
     i = j = 0
     k = inicio
-    while i < len(izq) and j < len(der):
-        if izq[i] <= der[j]:
-            lista[k] = izq[i]
+    while i < len(izquierda) and j < len(derecha):
+        if izquierda[i] <= derecha[j]:
+            lista[k] = izquierda[i]
             i += 1
         else:
-            lista[k] = der[j]
+            lista[k] = derecha[j]
             j += 1
         k += 1
-    while i < len(izq):
-        lista[k] = izq[i]
+    while i < len(izquierda):
+        lista[k] = izquierda[i]
         i += 1
         k += 1
-    while j < len(der):
-        lista[k] = der[j]
+    while j < len(derecha):
+        lista[k] = derecha[j]
         j += 1
         k += 1
 
 
-def ordenar_mezcla_directa(lista: List[Number]) -> List[Number]:
+def ordenar_mezcla_directa(lista):
     """
-    MEZCLA DIRECTA (Bottom-Up Merge Sort)
+    Mezcla Directa (Merge Sort iterativo)
     Complejidad: O(n log n)
-    
-    Concepto: Versión iterativa del merge sort.
-    Comienza fusionando sublistas de tamaño 1, luego 2, 4, 8, etc.
-    
-    Ventaja: No usa recursión, mejor para listas muy grandes.
     """
     lista = lista[:]
     n = len(lista)
     tam = 1
+    
     while tam < n:
         for inicio in range(0, n, tam * 2):
             medio = min(inicio + tam, n)
@@ -97,30 +171,25 @@ def ordenar_mezcla_directa(lista: List[Number]) -> List[Number]:
             if medio < fin:
                 mezclar_runs(lista, inicio, medio, fin)
         tam *= 2
+    
     return lista
 
 
-def ordenar_mezcla_equilibrada(lista: List[Number], k: int = 2) -> List[Number]:
+def ordenar_mezcla_equilibrada(lista, k=2):
     """
-    MEZCLA EQUILIBRADA (Balanced k-way Merge Sort)
+    Mezcla Equilibrada (k-way merge)
     Complejidad: O(n log_k n)
     
-    Concepto: Divide la lista en runs (cada elemento es un run),
-    luego fusiona de a k runs simultáneamente.
-    
     Parámetros:
-    - lista: Lista de números a ordenar
-    - k: Número de cintas o vías de mezcla (default 2)
-    
-    Uso: Ideal para ordenamiento externo con múltiples cintas magnéticas.
+    - lista: lista de números a ordenar
+    - k: número de "cintas" o particiones (default=2)
     """
     if len(lista) <= 1:
         return lista[:]
     
-    # Paso 1: Crear runs (cada elemento individual es un run)
+    # Crear runs (cada elemento es un run inicial)
     runs = [[x] for x in lista]
     
-    # Paso 2: Mezclar k runs a la vez
     while len(runs) > 1:
         nuevos_runs = []
         for i in range(0, len(runs), k):
@@ -135,14 +204,17 @@ def ordenar_mezcla_equilibrada(lista: List[Number], k: int = 2) -> List[Number]:
 
 
 # =============================================================
-# DICCIONARIO DE MÉTODOS DISPONIBLES
+# DICCIONARIO DE MÉTODOS
 # =============================================================
 
 METODOS_EXTERNOS = {
-    "1": ("Intercalación (Merge Sort recursivo)", ordenar_intercalacion, 
-          "O(n log n) - Divide y conquista recursivo"),
-    "2": ("Mezcla Directa (Bottom-Up)", ordenar_mezcla_directa, 
-          "O(n log n) - Versión iterativa sin recursión"),
-    "3": ("Mezcla Equilibrada (k-way)", lambda x: ordenar_mezcla_equilibrada(x, 2), 
-          "O(n log_k n) - Mezcla múltiples runs en paralelo"),
+    "intercalacion": ordenar_intercalacion,
+    "mezcla_directa": ordenar_mezcla_directa,
+    "mezcla_equilibrada": ordenar_mezcla_equilibrada
+}
+
+NOMBRES_METODOS_EXTERNOS = {
+    "intercalacion": "Intercalación (Merge Sort Recursivo)",
+    "mezcla_directa": "Mezcla Directa (Merge Sort Iterativo)",
+    "mezcla_equilibrada": "Mezcla Equilibrada (k-way Merge)"
 }
