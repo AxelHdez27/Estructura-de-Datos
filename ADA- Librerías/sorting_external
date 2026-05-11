@@ -1,0 +1,148 @@
+"""
+LIBRERÍA DE ORDENAMIENTO EXTERNO
+Métodos implementados:
+1. Intercalación (Merge Sort)
+2. Mezcla Directa (Bottom-Up Merge Sort)
+3. Mezcla Equilibrada (Balanced Multi-way Merge)
+"""
+
+from typing import List, Union
+
+Number = Union[int, float]
+
+
+def intercalar(izq: List[Number], der: List[Number]) -> List[Number]:
+    """
+    Fusiona dos listas ordenadas en una sola
+    Función auxiliar para los métodos de mezcla
+    """
+    resultado = []
+    i = j = 0
+    while i < len(izq) and j < len(der):
+        if izq[i] <= der[j]:
+            resultado.append(izq[i])
+            i += 1
+        else:
+            resultado.append(der[j])
+            j += 1
+    resultado.extend(izq[i:])
+    resultado.extend(der[j:])
+    return resultado
+
+
+def ordenar_intercalacion(lista: List[Number]) -> List[Number]:
+    """
+    INTERCALACIÓN (Merge Sort recursivo)
+    Complejidad: O(n log n)
+    
+    Concepto: Divide la lista en mitades recursivamente,
+    ordena cada mitad y luego las fusiona (intercala).
+    
+    Uso típico en ordenamiento externo cuando los datos
+    no caben en memoria RAM.
+    """
+    if len(lista) <= 1:
+        return lista[:]
+    medio = len(lista) // 2
+    return intercalar(
+        ordenar_intercalacion(lista[:medio]),
+        ordenar_intercalacion(lista[medio:])
+    )
+
+
+def mezclar_runs(lista: List[Number], inicio: int, medio: int, fin: int) -> None:
+    """
+    Función auxiliar para Mezcla Directa
+    Fusiona dos subarreglos ordenados dentro de la misma lista
+    """
+    izq = lista[inicio:medio]
+    der = lista[medio:fin]
+    i = j = 0
+    k = inicio
+    while i < len(izq) and j < len(der):
+        if izq[i] <= der[j]:
+            lista[k] = izq[i]
+            i += 1
+        else:
+            lista[k] = der[j]
+            j += 1
+        k += 1
+    while i < len(izq):
+        lista[k] = izq[i]
+        i += 1
+        k += 1
+    while j < len(der):
+        lista[k] = der[j]
+        j += 1
+        k += 1
+
+
+def ordenar_mezcla_directa(lista: List[Number]) -> List[Number]:
+    """
+    MEZCLA DIRECTA (Bottom-Up Merge Sort)
+    Complejidad: O(n log n)
+    
+    Concepto: Versión iterativa del merge sort.
+    Comienza fusionando sublistas de tamaño 1, luego 2, 4, 8, etc.
+    
+    Ventaja: No usa recursión, mejor para listas muy grandes.
+    """
+    lista = lista[:]
+    n = len(lista)
+    tam = 1
+    while tam < n:
+        for inicio in range(0, n, tam * 2):
+            medio = min(inicio + tam, n)
+            fin = min(inicio + tam * 2, n)
+            if medio < fin:
+                mezclar_runs(lista, inicio, medio, fin)
+        tam *= 2
+    return lista
+
+
+def ordenar_mezcla_equilibrada(lista: List[Number], k: int = 2) -> List[Number]:
+    """
+    MEZCLA EQUILIBRADA (Balanced k-way Merge Sort)
+    Complejidad: O(n log_k n)
+    
+    Concepto: Divide la lista en runs (cada elemento es un run),
+    luego fusiona de a k runs simultáneamente.
+    
+    Parámetros:
+    - lista: Lista de números a ordenar
+    - k: Número de cintas o vías de mezcla (default 2)
+    
+    Uso: Ideal para ordenamiento externo con múltiples cintas magnéticas.
+    """
+    if len(lista) <= 1:
+        return lista[:]
+    
+    # Paso 1: Crear runs (cada elemento individual es un run)
+    runs = [[x] for x in lista]
+    
+    # Paso 2: Mezclar k runs a la vez
+    while len(runs) > 1:
+        nuevos_runs = []
+        for i in range(0, len(runs), k):
+            grupo = runs[i:i + k]
+            mezclado = grupo[0]
+            for r in grupo[1:]:
+                mezclado = intercalar(mezclado, r)
+            nuevos_runs.append(mezclado)
+        runs = nuevos_runs
+    
+    return runs[0]
+
+
+# =============================================================
+# DICCIONARIO DE MÉTODOS DISPONIBLES
+# =============================================================
+
+METODOS_EXTERNOS = {
+    "1": ("Intercalación (Merge Sort recursivo)", ordenar_intercalacion, 
+          "O(n log n) - Divide y conquista recursivo"),
+    "2": ("Mezcla Directa (Bottom-Up)", ordenar_mezcla_directa, 
+          "O(n log n) - Versión iterativa sin recursión"),
+    "3": ("Mezcla Equilibrada (k-way)", lambda x: ordenar_mezcla_equilibrada(x, 2), 
+          "O(n log_k n) - Mezcla múltiples runs en paralelo"),
+}
