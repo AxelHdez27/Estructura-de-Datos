@@ -1,0 +1,406 @@
+"""
+PROGRAMA COMPLETO DE ORDENAMIENTO
+Integra:
+- Ordenamiento Interno: Burbuja, Inserción, Selección, ShellSort, QuickSort, HeapSort, RadixSort
+- Ordenamiento Externo: Intercalación, Mezcla Directa, Mezcla Equilibrada
+
+Soporta archivos: TXT, JSON, Excel (.xlsx)
+- Métodos internos: 1 archivo
+- Métodos externos: 2 archivos (combinados)
+
+Autor: Sistema Integrado
+Fecha: 2024
+"""
+
+import os
+import json
+from datetime import datetime
+
+# Importar librerías
+from sorting_internal import (
+    METODOS_INTERNOS, NOMBRES_METODOS_INTERNOS,
+    leer_archivo, EXCEL_DISPONIBLE
+)
+from sorting_external import (
+    METODOS_EXTERNOS, NOMBRES_METODOS_EXTERNOS,
+    leer_archivo as leer_archivo_externo
+)
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    TKINTER_DISPONIBLE = True
+except ImportError:
+    TKINTER_DISPONIBLE = False
+
+
+# =============================================================
+# FUNCIONES DE SELECCIÓN DE ARCHIVOS
+# =============================================================
+
+def seleccionar_archivo(mensaje, obligatorio=True):
+    """Selecciona archivo usando explorador o ruta manual"""
+    if TKINTER_DISPONIBLE:
+        print(f"\n  {mensaje}")
+        if not obligatorio:
+            print("    (Puedes dejar vacío si solo quieres 1 archivo)")
+        print("    E = Usar explorador de archivos")
+        print("    M = Escribir ruta manualmente")
+        if not obligatorio:
+            print("    N = No usar más archivos")
+        opcion = input("  Elige (E/M" + ("/N" if not obligatorio else "") + "): ").strip().upper()
+        
+        if opcion == 'N' and not obligatorio:
+            return None
+        
+        if opcion == 'E':
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            ruta = filedialog.askopenfilename(
+                title=mensaje,
+                filetypes=[
+                    ("Archivos soportados", "*.txt *.json *.xlsx *.xls"),
+                    ("Texto", "*.txt"),
+                    ("JSON", "*.json"),
+                    ("Excel", "*.xlsx *.xls"),
+                ]
+            )
+            root.destroy()
+            if ruta:
+                return ruta
+            print("  [!] No seleccionaste archivo, usa modo manual")
+    
+    # Modo manual
+    while True:
+        ruta = input(f"  {mensaje} " + ("(dejar vacío si no quieres): " if not obligatorio else ": ")).strip().strip('"')
+        if not ruta and not obligatorio:
+            return None
+        if not ruta:
+            continue
+        if os.path.isfile(ruta):
+            return ruta
+        print(f"  [!] Archivo no encontrado: {ruta}")
+
+
+def guardar_resultado(numeros, metodo, archivos, tipo_ordenamiento):
+    """Guarda el resultado en un archivo"""
+    nombre_base = f"resultado_{metodo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    if TKINTER_DISPONIBLE:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        ruta = filedialog.asksaveasfilename(
+            title="Guardar resultado como...",
+            defaultextension=".txt",
+            initialfile=nombre_base,
+            filetypes=[("Texto", "*.txt")]
+        )
+        root.destroy()
+        if not ruta:
+            ruta = nombre_base
+    else:
+        ruta = input(f"  Nombre del archivo de salida [default: {nombre_base}]: ").strip()
+        if not ruta:
+            ruta = nombre_base
+        if not ruta.endswith('.txt'):
+            ruta += '.txt'
+    
+    with open(ruta, 'w', encoding='utf-8') as f:
+        f.write("=" * 70 + "\n")
+        f.write(f"  RESULTADO DE ORDENAMIENTO - {metodo.upper()}\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"  Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"  Tipo de ordenamiento: {tipo_ordenamiento}\n")
+        f.write(f"  Método: {metodo}\n")
+        f.write(f"  Archivos utilizados: {len(archivos)}\n")
+        for i, arch in enumerate(archivos, 1):
+            f.write(f"    Archivo {i}: {os.path.basename(arch)}\n")
+        f.write(f"  Total números: {len(numeros)}\n")
+        f.write("=" * 70 + "\n\n")
+        f.write("Números ordenados:\n")
+        f.write("-" * 50 + "\n")
+        
+        # Escribir en formato amigable
+        for i, num in enumerate(numeros, 1):
+            f.write(f"{num}")
+            if i % 10 == 0:
+                f.write("\n")
+            elif i != len(numeros):
+                f.write(", ")
+        f.write("\n" + "-" * 50 + "\n")
+    
+    print(f"\n  ✅ Resultado guardado en: {os.path.abspath(ruta)}")
+    return ruta
+
+
+# =============================================================
+# FUNCIONES PRINCIPALES
+# =============================================================
+
+def ejecutar_metodo_interno():
+    """Ejecuta un método de ordenamiento interno (1 archivo)"""
+    print("\n" + "=" * 70)
+    print("  ORDENAMIENTO INTERNO - 1 ARCHIVO")
+    print("=" * 70)
+    
+    # Mostrar métodos disponibles
+    print("\n  Métodos disponibles:")
+    metodos_lista = list(METODOS_INTERNOS.keys())
+    for i, key in enumerate(metodos_lista, 1):
+        print(f"    {i}. {NOMBRES_METODOS_INTERNOS[key]}")
+    
+    # Seleccionar método
+    while True:
+        try:
+            opcion = int(input(f"\n  Selecciona método (1-{len(metodos_lista)}): "))
+            if 1 <= opcion <= len(metodos_lista):
+                metodo_key = metodos_lista[opcion - 1]
+                metodo_nombre = NOMBRES_METODOS_INTERNOS[metodo_key]
+                metodo_funcion = METODOS_INTERNOS[metodo_key]
+                break
+            print(f"  Opción inválida. Elige 1-{len(metodos_lista)}")
+        except ValueError:
+            print("  Ingresa un número válido")
+    
+    print(f"\n  Método seleccionado: {metodo_nombre}")
+    
+    # Seleccionar archivo
+    archivo = seleccionar_archivo("Selecciona el archivo", obligatorio=True)
+    if not archivo:
+        print("  ❌ Debes seleccionar un archivo")
+        return
+    
+    try:
+        # Leer datos
+        datos = leer_archivo(archivo)
+        print(f"\n  📁 Archivo: {os.path.basename(archivo)}")
+        print(f"  📊 Números ({len(datos)}): {datos}")
+        
+        # Ordenar
+        print(f"\n  🔄 Ordenando con {metodo_nombre}...")
+        resultado = metodo_funcion(datos)
+        
+        print(f"\n  ✅ Resultado ordenado ({len(resultado)} números):")
+        print(f"     {resultado}")
+        
+        # Guardar resultado
+        guardar_resultado(resultado, metodo_nombre, [archivo], "Interno")
+        
+    except Exception as e:
+        print(f"\n  ❌ Error: {e}")
+
+
+def ejecutar_metodo_externo():
+    """Ejecuta un método de ordenamiento externo (2 archivos)"""
+    print("\n" + "=" * 70)
+    print("  ORDENAMIENTO EXTERNO - 2 ARCHIVOS")
+    print("=" * 70)
+    
+    # Mostrar métodos disponibles
+    print("\n  Métodos disponibles:")
+    metodos_lista = list(METODOS_EXTERNOS.keys())
+    for i, key in enumerate(metodos_lista, 1):
+        print(f"    {i}. {NOMBRES_METODOS_EXTERNOS[key]}")
+    
+    # Seleccionar método
+    while True:
+        try:
+            opcion = int(input(f"\n  Selecciona método (1-{len(metodos_lista)}): "))
+            if 1 <= opcion <= len(metodos_lista):
+                metodo_key = metodos_lista[opcion - 1]
+                metodo_nombre = NOMBRES_METODOS_EXTERNOS[metodo_key]
+                metodo_funcion = METODOS_EXTERNOS[metodo_key]
+                break
+            print(f"  Opción inválida. Elige 1-{len(metodos_lista)}")
+        except ValueError:
+            print("  Ingresa un número válido")
+    
+    print(f"\n  Método seleccionado: {metodo_nombre}")
+    
+    # Configuración adicional para mezcla equilibrada
+    k = None
+    if metodo_key == "mezcla_equilibrada":
+        while True:
+            try:
+                k = int(input("  Número de cintas (k) [default=2]: ") or "2")
+                if k >= 2:
+                    break
+                print("  k debe ser >= 2")
+            except ValueError:
+                print("  Ingresa un número entero")
+        print(f"  Cintas utilizadas: {k}")
+    
+    # Seleccionar archivos
+    archivo1 = seleccionar_archivo("Selecciona el PRIMER archivo", obligatorio=True)
+    if not archivo1:
+        print("  ❌ Debes seleccionar al menos un archivo")
+        return
+    
+    archivo2 = seleccionar_archivo("Selecciona el SEGUNDO archivo", obligatorio=True)
+    if not archivo2:
+        print("  ❌ Debes seleccionar el segundo archivo")
+        return
+    
+    try:
+        # Leer datos
+        datos1 = leer_archivo_externo(archivo1)
+        datos2 = leer_archivo_externo(archivo2)
+        
+        print(f"\n  📁 Archivo 1: {os.path.basename(archivo1)}")
+        print(f"     Números ({len(datos1)}): {datos1}")
+        print(f"\n  📁 Archivo 2: {os.path.basename(archivo2)}")
+        print(f"     Números ({len(datos2)}): {datos2}")
+        
+        # Combinar datos
+        combinados = datos1 + datos2
+        print(f"\n  📊 Datos combinados ({len(combinados)} números): {combinados}")
+        
+        # Ordenar
+        print(f"\n  🔄 Ordenando con {metodo_nombre}...")
+        if k:
+            resultado = metodo_funcion(combinados, k)
+        else:
+            resultado = metodo_funcion(combinados)
+        
+        print(f"\n  ✅ Resultado ordenado ({len(resultado)} números):")
+        print(f"     {resultado}")
+        
+        # Guardar resultado
+        guardar_resultado(resultado, metodo_nombre.split()[0], [archivo1, archivo2], "Externo")
+        
+    except Exception as e:
+        print(f"\n  ❌ Error: {e}")
+
+
+def crear_archivos_ejemplo():
+    """Crea archivos de ejemplo para probar"""
+    print("\n  📁 Creando archivos de ejemplo...")
+    
+    # Archivos TXT
+    with open("datos1.txt", "w", encoding="utf-8") as f:
+        f.write("85, 72, 91, 60, 78, 34, 55, 19")
+    
+    with open("datos2.txt", "w", encoding="utf-8") as f:
+        f.write("43, 67, 11, 98, 25, 50, 73, 88")
+    
+    with open("datos3.txt", "w", encoding="utf-8") as f:
+        f.write("5, 2, 9, 1, 7, 3, 8, 4, 6")
+    
+    # Archivos JSON
+    with open("datos1.json", "w", encoding="utf-8") as f:
+        json.dump([85, 72, 91, 60, 78, 34, 55, 19], f)
+    
+    with open("datos2.json", "w", encoding="utf-8") as f:
+        json.dump({"numeros": [43, 67, 11, 98, 25, 50, 73, 88]}, f)
+    
+    # Archivos Excel
+    if EXCEL_DISPONIBLE:
+        import openpyxl
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Numeros"
+        for v in [85, 72, 91, 60, 78, 34, 55, 19]:
+            ws.append([v])
+        wb.save("datos1.xlsx")
+        
+        wb2 = openpyxl.Workbook()
+        ws2 = wb2.active
+        ws2.title = "Valores"
+        for v in [43, 67, 11, 98, 25, 50, 73, 88]:
+            ws2.append([v])
+        wb2.save("datos2.xlsx")
+    
+    print("\n  ✅ Archivos creados:")
+    print("     📄 TXT: datos1.txt, datos2.txt, datos3.txt")
+    print("     📄 JSON: datos1.json, datos2.json")
+    if EXCEL_DISPONIBLE:
+        print("     📊 Excel: datos1.xlsx, datos2.xlsx")
+    print(f"\n  📁 Carpeta: {os.getcwd()}")
+
+
+def mostrar_menu():
+    """Muestra el menú principal"""
+    print("\n" + "=" * 70)
+    print("   SISTEMA COMPLETO DE ORDENAMIENTO")
+    print("=" * 70)
+    print("""
+┌─────────────────────────────────────────────────────────────────────┐
+│  ORDENAMIENTO INTERNO (1 archivo)                                   │
+│  ├─ 1. Burbuja                                                      │
+│  ├─ 2. Inserción                                                    │
+│  ├─ 3. Selección                                                    │
+│  ├─ 4. ShellSort                                                    │
+│  ├─ 5. QuickSort                                                    │
+│  ├─ 6. HeapSort                                                     │
+│  └─ 7. RadixSort                                                    │
+│                                                                     │
+│  ORDENAMIENTO EXTERNO (2 archivos)                                  │
+│  ├─ 8. Intercalación (Merge Sort Recursivo)                         │
+│  ├─ 9. Mezcla Directa (Merge Sort Iterativo)                        │
+│  └─ 10. Mezcla Equilibrada (k-way Merge)                            │
+└─────────────────────────────────────────────────────────────────────┘
+""")
+    print("  Opciones adicionales:")
+    print("    11. Crear archivos de ejemplo")
+    print("    0. Salir")
+    print("-" * 70)
+
+
+def limpiar():
+    """Limpia la pantalla"""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+
+def main():
+    """Función principal"""
+    limpiar()
+    print("=" * 70)
+    print("   BIENVENIDO AL SISTEMA COMPLETO DE ORDENAMIENTO")
+    print("=" * 70)
+    print("""
+  Este programa integra 10 métodos de ordenamiento:
+  
+  ▸ INTERNOS (1 archivo): Burbuja, Inserción, Selección,
+    ShellSort, QuickSort, HeapSort, RadixSort
+  
+  ▸ EXTERNOS (2 archivos): Intercalación, Mezcla Directa,
+    Mezcla Equilibrada
+  
+  ✅ Soporta archivos: TXT, JSON, Excel (.xlsx)
+  ✅ Guarda resultados ordenados
+""")
+    
+    respuesta = input("  ¿Deseas crear archivos de ejemplo? (s/n): ").strip().lower()
+    if respuesta == 's':
+        crear_archivos_ejemplo()
+    
+    input("\n  ⏎ Presiona ENTER para continuar...")
+    
+    while True:
+        limpiar()
+        mostrar_menu()
+        
+        opcion = input("\n  Selecciona una opción (0-11): ").strip()
+        
+        if opcion == '0':
+            print("\n  👋 ¡Hasta luego!\n")
+            break
+        elif opcion in ['1', '2', '3', '4', '5', '6', '7']:
+            ejecutar_metodo_interno()
+            input("\n  ⏎ Presiona ENTER para continuar...")
+        elif opcion in ['8', '9', '10']:
+            ejecutar_metodo_externo()
+            input("\n  ⏎ Presiona ENTER para continuar...")
+        elif opcion == '11':
+            crear_archivos_ejemplo()
+            input("\n  ⏎ Presiona ENTER para continuar...")
+        else:
+            print("\n  ❌ Opción no válida")
+            input("\n  ⏎ Presiona ENTER para continuar...")
+
+
+if __name__ == "__main__":
+    main()
